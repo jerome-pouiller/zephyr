@@ -408,7 +408,8 @@ static int gspi_siwx91x_transceive_dma(const struct device *dev, const struct sp
 		return -EINVAL;
 	}
 
-	/* Reset the Rx and Tx FIFO register */
+	cfg->reg->GSPI_FIFO_THRLD_b.RFIFO_RESET = 1;
+	cfg->reg->GSPI_FIFO_THRLD_b.WFIFO_RESET = 1;
 	cfg->reg->GSPI_FIFO_THRLD = 0;
 
 	ret = gspi_siwx91x_prepare_dma_transaction(dev, padded_transaction_size);
