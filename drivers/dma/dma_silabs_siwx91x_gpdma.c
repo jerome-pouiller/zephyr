@@ -151,8 +151,8 @@ static int siwx91x_gpdma_desc_config(struct siwx19x_gpdma_data *data,
 	int ret;
 
 	for (int i = 0; i < config->block_count; i++) {
-		if (!IS_ALIGNED(block->source_address, config->source_burst_length) ||
-		    !IS_ALIGNED(block->dest_address, config->dest_burst_length) ||
+		if (!IS_ALIGNED(block->source_address, MIN(config->source_burst_length, 4)) ||
+		    !IS_ALIGNED(block->dest_address, MIN(config->dest_burst_length, 4)) ||
 		    !IS_ALIGNED(block->block_size, operation_width)) {
 			LOG_ERR("Buffer not aligned");
 			goto free_desc;
