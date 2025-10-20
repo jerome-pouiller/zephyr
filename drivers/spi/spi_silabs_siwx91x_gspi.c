@@ -55,11 +55,6 @@ struct gspi_siwx91x_data {
 	struct gspi_siwx91x_dma_channel dma_tx;
 };
 
-#ifdef CONFIG_SPI_SILABS_SIWX91X_GSPI_DMA
-/* Placeholder buffer for unused RX data */
-static volatile uint8_t empty_buffer __aligned(4);
-#endif
-
 static bool spi_siwx91x_is_dma_enabled_instance(const struct device *dev)
 {
 #ifdef CONFIG_SPI_SILABS_SIWX91X_GSPI_DMA
@@ -258,8 +253,8 @@ static uint32_t gspi_siwx91x_fill_desc(const struct gspi_siwx91x_config *cfg,
 			new_blk_cfg->dest_address = (uint32_t)buffer;
 			new_blk_cfg->dest_addr_adj = DMA_ADDR_ADJ_INCREMENT;
 		} else {
-			/* Null buffer pointer means rx to null byte */
-			new_blk_cfg->dest_address = (uint32_t)&empty_buffer;
+			/* Throw away the rx buffer. Writing in GSPI_READ_FIFO is a no-op */
+			new_blk_cfg->dest_address = (uint32_t)&cfg->reg->GSPI_READ_FIFO;
 			new_blk_cfg->dest_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
 		}
 	}
