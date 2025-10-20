@@ -176,10 +176,35 @@ static int siwx91x_gpdma_desc_config(struct siwx19x_gpdma_data *data,
 
 		if (block_addr->dest_addr_adj == DMA_ADDR_ADJ_NO_CHANGE) {
 			cur_desc->chnlCtrlConfig.dstFifoMode = 1;
+			/* HACK: GPDMA does not support DMA_ADDR_ADJ_NO_CHANGE with a memory buffer.
+			 * However, GPDMA is configured to fill destination rather than copying
+			 * bytes from source, the DMA_ADDR_ADJ_NO_CHANGE is respected.
+			 * SPI driver is probably the only user of this feature. For SPI, the result
+			 * is not relevant.
+			 */
+			if (xfer_cfg->chnlCtrlConfig.transType == SIWX91X_TRANSFER_PER_TO_MEM) {
+				cur_desc->miscChnlCtrlConfig.memoryFillEn = 1;
+				cur_desc->miscChnlCtrlConfig.memoryOneFill = 0;
+			}
 		}
 
 		if (block_addr->source_addr_adj == DMA_ADDR_ADJ_NO_CHANGE) {
 			cur_desc->chnlCtrlConfig.srcFifoMode = 1;
+			/* HACK: Same comment than SIWX91X_TRANSFER_PER_TO_MEM above. We apply the
+			 * same workaround. Instead of transfering the real data, we fill the
+			 * peripheral with 0s or 1s. We hope the users won't need any values other
+			 * than 0x00 of 0xFF.
+			 */
+			if (xfer_cfg->chnlCtrlConfig.transType == SIWX91X_TRANSFER_MEM_TO_PER) {
+				cur_desc->miscChnlCtrlConfig.memoryFillEn = 1;
+				if (*(uint8_t *)block_addr->source_address == 0xFF) {
+					cur_desc->miscChnlCtrlConfig.memoryOneFill = 1;
+				} else if (*(uint8_t *)block_addr->source_address == 0x00) {
+					cur_desc->miscChnlCtrlConfig.memoryOneFill = 0;
+				} else {
+					goto free_desc;
+				}
+			}
 		}
 
 		prev_desc = cur_desc;
