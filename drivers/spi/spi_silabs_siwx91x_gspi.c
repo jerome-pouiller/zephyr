@@ -28,6 +28,8 @@ LOG_MODULE_REGISTER(spi_siwx91x_gspi, CONFIG_SPI_LOG_LEVEL);
 #define GSPI_MAX_BAUDRATE_FOR_POS_EDGE_SAMPLE 40000000
 #define GSPI_DMA_MAX_DESCRIPTOR_TRANSFER_SIZE 4096
 
+#define BURST_SIZE 2
+
 /* Warning for unsupported configurations */
 #if defined(CONFIG_SPI_ASYNC) && !defined(CONFIG_SPI_SILABS_SIWX91X_GSPI_DMA)
 #warning "Silabs GSPI SPI driver ASYNC without DMA is not supported"
@@ -225,8 +227,8 @@ static int gspi_siwx91x_dma_config(const struct device *dev,
 		.complete_callback_en = 0,
 		.source_data_size = dfs,
 		.dest_data_size = dfs,
-		.source_burst_length = 1,
-		.dest_burst_length = 1,
+		.source_burst_length = BURST_SIZE,
+		.dest_burst_length = BURST_SIZE,
 		.block_count = block_count,
 		.head_block = channel->dma_descriptors,
 		.dma_slot = channel->dma_slot,
@@ -414,6 +416,8 @@ static int gspi_siwx91x_transceive_dma(const struct device *dev, const struct sp
 	cfg->reg->GSPI_FIFO_THRLD_b.RFIFO_RESET = 1;
 	cfg->reg->GSPI_FIFO_THRLD_b.WFIFO_RESET = 1;
 	cfg->reg->GSPI_FIFO_THRLD = 0;
+	cfg->reg->GSPI_FIFO_THRLD_b.FIFO_AEMPTY_THRLD = BURST_SIZE - 1;
+	cfg->reg->GSPI_FIFO_THRLD_b.FIFO_AFULL_THRLD = BURST_SIZE - 1;
 
 	ret = gspi_siwx91x_prepare_dma_transaction(dev, padded_transaction_size);
 	if (ret) {
