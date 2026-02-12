@@ -74,12 +74,14 @@
 		zephyr,memory-attr = <DT_MEM_ARM(ATTR_MPU_RAM_NOCACHE)>;
 	};
 
-	nwp: nwp {
+	nwp: nwp@41050000 {
 		compatible = "silabs,siwx91x-nwp";
+		reg = <0x41050000 0x1000>, <0x46008000 0x1000>;
+		reg-names = "ta", "m4";
 		stack-size = <10240>;
 		interrupt-parent = <&nvic>;
-		interrupts = <30 0>, <74 0>;
-		interrupt-names = "nwp_stack", "nwp_irq";
+		interrupts = <74 0>;
+		interrupt-names = "nwp_irq";
 		antenna-selection = "ext-gpios";
 		support-1p8v;
 		enable-xtal-correction;

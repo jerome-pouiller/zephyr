@@ -16,8 +16,11 @@
 #include <zephyr/net/wifi.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/devicetree.h>
+#include <zephyr/net_buf.h>
 
 #include "siwx91x_nwp.h"
+#include "hal.h"
+#include "hal_ram.h"
 #include "nwp_fw_version.h"
 #include "sl_wifi_callback_framework.h"
 
@@ -35,21 +38,6 @@ LOG_MODULE_REGISTER(siwx91x_nwp);
 BUILD_ASSERT(DT_REG_SIZE(DT_CHOSEN(zephyr_sram)) == KB(195) ||
 	     DT_REG_SIZE(DT_CHOSEN(zephyr_sram)) == KB(255) ||
 	     DT_REG_SIZE(DT_CHOSEN(zephyr_sram)) == KB(319));
-
-struct siwx91x_nwp_data {
-	uint8_t power_profile;
-	char current_country_code[WIFI_COUNTRY_CODE_LEN];
-};
-
-struct siwx91x_nwp_config {
-	void (*config_irq)(const struct device *dev);
-	uint32_t stack_size;
-	uint8_t antenna_selection;
-	bool support_1p8v;
-	bool enable_xtal_correction;
-	bool qspi_80mhz_clk;
-	uint32_t clock_frequency;
-};
 
 typedef struct {
 	const char *const *codes;
@@ -176,6 +164,7 @@ static void siwx91x_apply_boot_config(const struct device *dev,
 		}
 	}
 
+	/* FIXME: use pinctrl instead */
 	boot_config->ext_custom_feature_bit_map &= ~SL_SI91X_EXT_FEAT_FRONT_END_MSK;
 	boot_config->ext_custom_feature_bit_map |=
 		FIELD_PREP(SL_SI91X_EXT_FEAT_FRONT_END_MSK, cfg->antenna_selection);
@@ -299,12 +288,12 @@ static void siwx91x_configure_network_stack(sl_wifi_system_boot_configuration_t 
 	}
 }
 
-static int siwx91x_check_nwp_version(void)
+static int siwx91x_check_nwp_version(const struct device *dev)
 {
 	sl_wifi_firmware_version_t version;
 	int ret;
 
-	ret = sl_wifi_get_firmware_version(&version);
+	ret = siwx91x_nwp_get_firmware_version(dev, &version);
 	if (ret != SL_STATUS_OK) {
 		return -EINVAL;
 	}
@@ -347,7 +336,7 @@ static int siwx91x_get_nwp_config(const struct device *dev,
 		.band = SL_SI91X_WIFI_BAND_2_4GHZ,
 		.boot_option = LOAD_NWP_FW,
 		.boot_config = {
-			.feature_bit_map = SL_SI91X_FEAT_WPS_DISABLE | SL_SI91X_FEAT_AGGREGATION,
+			.feature_bit_map = SL_SI91X_FEAT_WPS_DISABLE | SL_SI91X_FEAT_AGGREGATION | SLI_SI91X_FEAT_FW_UPDATE_NEW_CODE,
 			.tcp_ip_feature_bit_map = SL_SI91X_TCP_IP_FEAT_EXTENSION_VALID,
 			.custom_feature_bit_map = SL_SI91X_CUSTOM_FEAT_EXTENSION_VALID |
 						  SL_SI91X_CUSTOM_FEAT_ASYNC_CONNECTION_STATUS,
@@ -422,17 +411,17 @@ int siwx91x_nwp_mode_switch(const struct device *dev, uint8_t oper_mode, bool hi
 	if (status < 0) {
 		return status;
 	}
+	__ASSERT(0, "Not supported");
 
 	/* FIXME: Calling sl_wifi_deinit() impacts Bluetooth if coexistence is enabled */
-	status = sl_wifi_deinit();
-	if (status != SL_STATUS_OK) {
-		return -ETIMEDOUT;
-	}
-
-	status = sl_wifi_init(&nwp_config, NULL, sl_wifi_default_event_handler);
-	if (status != SL_STATUS_OK) {
-		return -ETIMEDOUT;
-	}
+	/* status = sl_wifi_deinit();                                               */
+	/* if (status != SL_STATUS_OK) {                                            */
+	/*         return -ETIMEDOUT;                                               */
+	/* }                                                                        */
+	/* status = sl_wifi_init(&nwp_config, NULL, sl_wifi_default_event_handler); */
+	/* if (status != SL_STATUS_OK) {                                            */
+	/*         return -ETIMEDOUT;                                               */
+	/* }                                                                        */
 
 	return 0;
 }
@@ -474,10 +463,19 @@ int siwx91x_nwp_apply_power_profile(const struct device *dev)
 
 static int siwx91x_nwp_init(const struct device *dev)
 {
-	const struct siwx91x_nwp_config *config = dev->config;
+	static struct device static_dev;
+	static struct siwx91x_nwp_config static_config;
 	struct siwx91x_nwp_data *data = dev->data;
 	sl_wifi_device_configuration_t network_config;
 	int ret;
+
+	/* HACK: structre device is allways located in flash which is slow on 917. The hack below
+	 * copy the structure in RAM. Then the copy is used in most of the NWP driver code.
+	 */
+	memcpy(&static_dev, dev, sizeof(struct device));
+	memcpy(&static_config, dev->config, sizeof(struct siwx91x_nwp_config));
+	static_dev.config = &static_config;
+	dev = &static_dev;
 
 	if (IS_ENABLED(CONFIG_BT_SILABS_SIWX91X) || IS_ENABLED(CONFIG_WIFI_SILABS_SIWX91X)) {
 		data->power_profile = ASSOCIATED_POWER_SAVE;
@@ -488,13 +486,13 @@ static int siwx91x_nwp_init(const struct device *dev)
 	 * sl_net_set_profile() here. Currently these are unused.
 	 * Despite its name, this function need to be called even if wifi is not used.
 	 */
-	ret = sl_wifi_init(&network_config, NULL, sl_wifi_default_event_handler);
+	ret = siwx91x_nwp_hal_init(dev, &network_config, true);
 	if (ret) {
 		return -EINVAL;
 	}
 
 	/* Check if the NWP firmware version is correct */
-	ret = siwx91x_check_nwp_version();
+	ret = siwx91x_check_nwp_version(dev);
 	if (ret < 0) {
 		LOG_ERR("Unexpected NWP firmware version (expected: %X.%d.%d.%d.%d.%d.%d)",
 			siwx91x_nwp_fw_expected_version.rom_id,
@@ -523,8 +521,6 @@ static int siwx91x_nwp_init(const struct device *dev)
 		}
 	}
 
-	config->config_irq(dev);
-
 	return 0;
 }
 
@@ -533,41 +529,48 @@ BUILD_ASSERT(CONFIG_SIWX91X_NWP_INIT_PRIORITY < CONFIG_KERNEL_INIT_PRIORITY_DEFA
 	     "mbed TLS must be initialized after the NWP.");
 #endif
 
+NET_BUF_POOL_FIXED_DEFINE(siwx91x_nwp_tx_pool, 1, SIWX91X_MAX_PAYLOAD_SIZE, 0, NULL);
+
+#if CONFIG_NET_BUF_DATA_SIZE < SIWX91X_MAX_PAYLOAD_SIZE
+NET_BUF_POOL_FIXED_DEFINE(siwx91x_nwp_rx_pool, 2, SIWX91X_MAX_PAYLOAD_SIZE, 0, NULL);
+#define SIWX91X_NWP_RX_POOL_PTR &siwx91x_nwp_rx_pool
+#else
+#define SIWX91X_NWP_RX_POOL_PTR NULL
+#endif
+
 #define SIWX91X_NWP_DEFINE(inst)                                                                   \
+	static K_KERNEL_STACK_DEFINE(siwx91x_nwp_thread_stack##inst,                               \
+				     CONFIG_SIWX91X_NWP_THREAD_STACK_SIZE);                        \
                                                                                                    \
-	static void silabs_siwx91x_nwp_irq_configure_##inst(const struct device *dev)              \
+	static void siwx91x_nwp_irq_setup##inst(const struct device *dev)                          \
 	{                                                                                          \
-		ARG_UNUSED(dev);                                                                   \
-		IRQ_CONNECT(DT_INST_IRQ_BY_NAME(inst, nwp_irq, irq),                               \
-			    DT_INST_IRQ_BY_NAME(inst, nwp_irq, priority), IRQ074_Handler, NULL, 0);\
-		irq_enable(DT_INST_IRQ_BY_NAME(inst, nwp_irq, irq));                               \
+		IRQ_CONNECT(DT_INST_IRQN(inst), DT_INST_IRQ(inst, priority),                       \
+			    siwx91x_nwp_isr, DEVICE_DT_INST_GET(inst), 0);                         \
+		irq_enable(DT_INST_IRQN(inst));                                                    \
 	};                                                                                         \
                                                                                                    \
-	static struct siwx91x_nwp_data siwx91x_nwp_data_##inst = {                                 \
+	static struct siwx91x_nwp_data siwx91x_nwp_data##inst = {                                  \
 		.power_profile = DEEP_SLEEP_WITH_RAM_RETENTION,                                    \
 	};                                                                                         \
                                                                                                    \
-	static const struct siwx91x_nwp_config siwx91x_nwp_config_##inst = {                       \
-		.config_irq = silabs_siwx91x_nwp_irq_configure_##inst,                             \
-		.stack_size = DT_INST_PROP(inst, stack_size),                                      \
+	static const struct siwx91x_nwp_config siwx91x_nwp_config##inst = {                        \
+		.ta_regs = (struct siwx91x_nwp_ta_regs *)DT_INST_REG_ADDR_BY_NAME(inst, ta),       \
+		.m4_regs = (struct siwx91x_nwp_m4_regs *)DT_INST_REG_ADDR_BY_NAME(inst, m4),       \
+		.config_irq = siwx91x_nwp_irq_setup##inst,                                         \
 		.support_1p8v = DT_INST_PROP(inst, support_1p8v),                                  \
 		.enable_xtal_correction = DT_INST_PROP(inst, enable_xtal_correction),              \
 		.qspi_80mhz_clk = DT_INST_PROP(inst, qspi_80mhz_clk),                              \
 		.antenna_selection = DT_INST_ENUM_IDX(inst, antenna_selection),                    \
-		.clock_frequency = DT_INST_PROP(inst, clock_frequency)                             \
+		.clock_frequency = DT_INST_PROP(inst, clock_frequency),                            \
+		.rx_pool = SIWX91X_NWP_RX_POOL_PTR,                                                \
+		.tx_pool = &siwx91x_nwp_tx_pool,                                                   \
+		.thread_stack = siwx91x_nwp_thread_stack##inst,                                    \
+		.thread_stack_size = CONFIG_SIWX91X_NWP_THREAD_STACK_SIZE,                         \
+		.thread_priority = CONFIG_SIWX91X_NWP_THREAD_PRIO,                                 \
 	};                                                                                         \
                                                                                                    \
-	/* Coprocessor uses value stored in IVT to store its stack. We can't use Z_ISR_DECLARE() */\
-	static uint8_t __aligned(8) siwx91x_nwp_stack_##inst[DT_INST_PROP(inst, stack_size)];      \
-	static Z_DECL_ALIGN(struct _isr_list) Z_GENERIC_SECTION(.intList)                          \
-		__used __isr_siwg917_coprocessor_stack_irq_##inst = {                              \
-			.irq = DT_IRQ_BY_NAME(DT_DRV_INST(inst), nwp_stack, irq),                  \
-			.flags = ISR_FLAG_DIRECT,                                                  \
-			.func = &siwx91x_nwp_stack_##inst[sizeof(siwx91x_nwp_stack_##inst) - 1],   \
-	};                                                                                         \
-                                                                                                   \
-	DEVICE_DT_INST_DEFINE(inst, &siwx91x_nwp_init, NULL, &siwx91x_nwp_data_##inst,             \
-			      &siwx91x_nwp_config_##inst, POST_KERNEL,                             \
+	DEVICE_DT_INST_DEFINE(inst, &siwx91x_nwp_init, NULL, &siwx91x_nwp_data##inst,              \
+			      &siwx91x_nwp_config##inst, POST_KERNEL,                              \
 			      CONFIG_SIWX91X_NWP_INIT_PRIORITY, NULL);
 
 DT_INST_FOREACH_STATUS_OKAY(SIWX91X_NWP_DEFINE)
