@@ -10,10 +10,6 @@
 
 /* clang-format off */
 
-#define WIFI_ANT0_ULP0       SIWX91X_GPIO(0xFF, 6, 0xFF, 4, 0,  0)
-#define WIFI_ANT1_ULP4       SIWX91X_GPIO(0xFF, 6, 0xFF, 4, 0,  4)
-#define WIFI_ANT2_ULP5       SIWX91X_GPIO(0xFF, 6, 0xFF, 4, 0,  5)
-
 #define AGPIO_ULP0           SIWX91X_GPIO(0xFF, 7, 0xFF, 4, 0,  0)
 #define AGPIO_ULP1           SIWX91X_GPIO(0xFF, 7, 0xFF, 4, 0,  1)
 #define AGPIO_ULP2           SIWX91X_GPIO(0xFF, 7, 0xFF, 4, 0,  2)
@@ -617,6 +613,10 @@
 #define UULP_GPIO4_ULP2      SIWX91X_GPIO(0xFF,  4, 0xFF, 4, 0, 2)
 #define UULP_TESTMODE0_ULP7  SIWX91X_GPIO(0xFF, 11, 0xFF, 4, 0, 7)
 #define UULP_TESTMODE0_ULP9  SIWX91X_GPIO(0xFF,  5, 0xFF, 4, 0, 9)
+
+#define WIFI_ANT0_ULP0       SIWX91X_GPIO(0xFF, 6, 0xFF, 4, 0,  0)
+#define WIFI_ANT1_ULP4       SIWX91X_GPIO(0xFF, 6, 0xFF, 4, 0,  4)
+#define WIFI_ANT2_ULP5       SIWX91X_GPIO(0xFF, 6, 0xFF, 4, 0,  5)
 
 /* clang-format on */
 

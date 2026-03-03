@@ -118,6 +118,13 @@
 	status = "okay";
 };
 
+&nwp {
+	pinctrl-0 = <&nwp_default>;
+	pinctrl-names = "default";
+	antenna-selection = "ext-gpios";
+	status = "okay";
+};
+
 &adc0 {
 	pinctrl-0 = <&adc0_default>;
 	pinctrl-names = "default";

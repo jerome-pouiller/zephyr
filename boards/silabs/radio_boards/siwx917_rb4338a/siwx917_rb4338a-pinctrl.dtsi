@@ -27,4 +27,10 @@
 			pinmux = <AGPIO_ULP1>;
 		};
 	};
+
+	nwp_default: nwp_default {
+		group {
+			pinmux = <WIFI_ANT0_ULP0>, <WIFI_ANT1_ULP4>, <WIFI_ANT2_ULP5>;
+		};
+	};
 };

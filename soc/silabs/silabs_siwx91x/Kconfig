@@ -13,7 +13,8 @@ config SOC_FAMILY_SILABS_SIWX91X
 
 if SOC_FAMILY_SILABS_SIWX91X
 
-rsource "*/Kconfig"
+rsource "nwp/Kconfig"
+rsource "siwg917/Kconfig"
 
 config SILABS_SIWX91X_SLOW_FLASH_DATA
 	bool "Limit access to data in flash (EXPERIMENTAL)"
@@ -28,43 +29,6 @@ config SILABS_SIWX91X_SLOW_FLASH_DATA
 	  This option pulls the limitations described in CONFIG_SLOW_FLASH_DATA. The users have to
 	  make sure they are aware of them.
 
-config SILABS_SIWX91X_NWP
-	bool "Silabs Network Coprocessor"
-	depends on DT_HAS_SILABS_SIWX91X_NWP_ENABLED
-	select CODE_DATA_RELOCATION_SRAM
-	select NET_BUF
-	help
-	  Add support for Network Coprocessor (also named NWP) presents on SiWx91x parts.
-
-if SILABS_SIWX91X_NWP
-
-module = SIWX91X_NWP
-module-str = siwx91x_nwp
-source "subsys/logging/Kconfig.template.log_config"
-
-config SIWX91X_NWP_INIT_PRIORITY
-	int "Init priority"
-	default 39
-	help
-	  Initialization priority of the SiWx91x Network Processor. NWP init must
-	  have a higher priority than services that depend on it, such as Bluetooth,
-	  Wi-Fi and crypto.
-
-config SIWX91X_NWP_THREAD_STACK_SIZE
-	int "Stack size for interrupt handler"
-	default 1536
-	help
-	  Size of the stack used for internal thread which is ran for Network Co-Processor
-	  communication.
-
-config SIWX91X_NWP_THREAD_PRIO
-	int "Priority for interrupt handler"
-	default -3
-	help
-	  Priority level of the internal thread which is ran for Network Co-Processor
-	  communication.
-
-endif
 
 config SOC_SIWX91X_PM_BACKEND_PMGR
 	bool

@@ -3,6 +3,9 @@
 include(west)
 
 add_subdirectory(siwg917)
+if(CONFIG_SILABS_SIWX91X_NWP)
+  add_subdirectory(nwp)
+endif()
 
 # Necessary to not overwrite NWP Firmware
 math(EXPR FLASH_LOAD_ADDRESS "(${CONFIG_FLASH_BASE_ADDRESS}) + (${CONFIG_FLASH_LOAD_OFFSET})")
