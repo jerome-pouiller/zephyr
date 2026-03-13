@@ -9,10 +9,19 @@
 #include "siwx91x_nwp_bus.h"
 #include "siwx91x_nwp_api.h"
 #include "siwx91x_wifi.h"
+#include "siwx91x_wifi_ps.h"
+#include "siwx91x_wifi_ap.h"
 #include "siwx91x_wifi_sta.h"
 #include "siwx91x_wifi_scan.h"
 
 LOG_MODULE_REGISTER(siwx91x_wifi, CONFIG_SIWX91X_WIFI_LOG_LEVEL);
+
+BUILD_ASSERT(SLI_WIFI_SSID_LEN >= WIFI_SSID_MAX_LEN,
+	     "SSID lengths mismatch");
+BUILD_ASSERT(SLI_WIFI_PSK_LEN == WIFI_PSK_MAX_LEN,
+	     "PSK lengths mismatch");
+BUILD_ASSERT(SLI_WIFI_HARDWARE_ADDRESS_LENGTH == WIFI_MAC_ADDR_LEN,
+	     "Hardware address lengths mismatch");
 
 static int siwx91x_wifi_send(const struct device *dev, struct net_pkt *pkt)
 {
@@ -38,6 +47,7 @@ static void siwx91x_wifi_on_rx(const struct siwx91x_nwp_wifi_cb *ctxt, struct ne
 	net_buf_pull(buf, sizeof(struct siwx91x_frame_desc));
 
 	/* Multicast Tx frames are echoed back by the AP. This breaks IPv6 DAD algorithm. */
+	/* FIXME: use sl_wifi_configure_multicast_filter() to filter this */
 	if (!memcmp(((const struct net_eth_hdr *)buf->data)->src.addr,
 		    ll->addr, WIFI_MAC_ADDR_LEN)) {
 		return;
@@ -74,6 +84,36 @@ pkt_alloc_fail:
 	LOG_WRN("Dropped frame");
 }
 
+static int siwx91x_wifi_mode(const struct device *dev, struct wifi_mode_info *mode)
+{
+	const struct siwx91x_wifi_config *config = dev->config;
+	struct siwx91x_wifi_data *data = dev->data;
+	int ret;
+
+	switch (mode->oper) {
+	case WIFI_MGMT_GET:
+		mode->mode = data->operating_mode;
+		return 0;
+	case WIFI_MGMT_SET:
+		ret = siwx91x_nwp_reset(config->nwp_dev, mode->mode, false, 0);
+		if (ret) {
+			return ret;
+		}
+		siwx91x_nwp_set_band(config->nwp_dev, SL_WIFI_BAND_MODE_2_4GHZ);
+		siwx91x_nwp_wifi_init(config->nwp_dev);
+		/* FIXME: This command is rejected in AP mode */
+		siwx91x_nwp_set_device_region(config->nwp_dev, SL_WIFI_REGION_EU);
+		siwx91x_nwp_set_config(config->nwp_dev, SLI_WIFI_CONFIG_RTS_THRESHOLD, 2346);
+		siwx91x_nwp_set_sta_config(config->nwp_dev);
+		siwx91x_nwp_set_region(config->nwp_dev);
+		/* FIXME: Set max Tx Power for scan and join */
+		data->operating_mode = mode->mode;
+		return 0;;
+	default:
+		__ASSERT(0, "Corrupted argument");
+	}
+}
+
 static int siwx91x_wifi_get_config(const struct device *dev,
 				   enum ethernet_config_type type,
 				   struct ethernet_config *config)
@@ -91,9 +131,12 @@ static void siwx91x_wifi_ethernet_init(struct net_if *iface)
 {
 	struct ethernet_context *eth_ctx;
 
-	eth_ctx = net_if_l2_data(iface);
-	eth_ctx->eth_if_type = L2_ETH_IF_TYPE_WIFI;
-	ethernet_init(iface);
+	if (IS_ENABLED(CONFIG_WIFI_SILABS_SIWX91X_NET_STACK_NATIVE)) {
+		eth_ctx = net_if_l2_data(iface);
+		eth_ctx->eth_if_type = L2_ETH_IF_TYPE_WIFI;
+		ethernet_init(iface);
+		net_if_dormant_on(iface);
+	}
 }
 
 static void siwx91x_wifi_iface_init(struct net_if *iface)
@@ -103,7 +146,7 @@ static void siwx91x_wifi_iface_init(struct net_if *iface)
 	uint8_t mac_addr[NET_ETH_ADDR_LEN];
 
 	data->iface = iface;
-	siwx91x_nwp_set_band(config->nwp_dev, SL_SI91X_WIFI_BAND_2_4GHZ);
+	siwx91x_nwp_set_band(config->nwp_dev, SL_WIFI_BAND_MODE_2_4GHZ);
 	siwx91x_nwp_wifi_init(config->nwp_dev);
 	siwx91x_nwp_set_device_region(config->nwp_dev, SL_WIFI_REGION_EU);
 	siwx91x_nwp_set_config(config->nwp_dev, SLI_WIFI_CONFIG_RTS_THRESHOLD, 2346);
@@ -111,8 +154,6 @@ static void siwx91x_wifi_iface_init(struct net_if *iface)
 	siwx91x_nwp_get_mac_address(config->nwp_dev, mac_addr);
 	siwx91x_nwp_set_region(config->nwp_dev);
 	net_if_set_link_addr(iface, mac_addr, sizeof(mac_addr), NET_LINK_ETHERNET);
-
-	net_if_dormant_on(iface);
 	siwx91x_wifi_ethernet_init(iface);
 }
 
@@ -130,9 +171,17 @@ static int siwx91x_wifi_init(const struct device *dev)
 }
 
 static const struct wifi_mgmt_ops siwx91x_wifi_mgmt = {
+	.mode = siwx91x_wifi_mode,
 	.scan = siwx91x_wifi_scan,
 	.connect = siwx91x_wifi_connect,
 	.disconnect = siwx91x_wifi_disconnect,
+	.ap_enable = siwx91x_ap_enable,
+	.ap_disable = siwx91x_ap_disable,
+	.ap_sta_disconnect = siwx91x_ap_sta_disconnect,
+	.ap_config_params = siwx91x_ap_config_params,
+	.set_twt = siwx91x_wifi_set_twt,
+	.set_power_save	= siwx91x_wifi_set_power_save,
+	.get_power_save_config = siwx91x_wifi_get_power_save_config,
 };
 
 static const struct net_wifi_mgmt_offload siwx91x_wifi_api = {
@@ -147,8 +196,12 @@ static const struct siwx91x_wifi_config siwx91x_wifi_config = {
 };
 
 static struct siwx91x_wifi_data siwx91x_wifi_data = {
-	.nwp_ops.on_rx = siwx91x_wifi_on_rx,
 	.nwp_ops.on_scan_results = siwx91x_wifi_on_scan_results,
+	.nwp_ops.on_rx = siwx91x_wifi_on_rx,
+	.ap_idle_timeout = UINT8_MAX,
+	.ap_max_num_sta = 4,
+	.ps_exit_strategy = WIFI_PS_EXIT_EVERY_TIM,
+	.ps_wakeup_mode = WIFI_PS_WAKEUP_MODE_DTIM,
 };
 
 ETH_NET_DEVICE_DT_INST_DEFINE(0, siwx91x_wifi_init, NULL, &siwx91x_wifi_data, &siwx91x_wifi_config,

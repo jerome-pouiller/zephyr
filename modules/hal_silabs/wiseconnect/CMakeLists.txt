@@ -23,6 +23,11 @@ function(wiseconnect_get_ram_config node_var out_var)
   endif()
 endfunction()
 
+wiseconnect_get_ram_config("sram0" RAM_MEM_CONFIG)
+zephyr_compile_definitions(
+  SL_SI91X_SI917_RAM_MEM_CONFIG=${RAM_MEM_CONFIG}
+)
+
 # Keep these values sync with
 # components/device/silabs/si91x/mcu/core/chip/component/siwg917*.slcc
 zephyr_compile_definitions(
@@ -108,16 +113,6 @@ zephyr_library_sources_ifdef(CONFIG_ADC_SILABS_SIWX91X
   ${WISECONNECT}/components/device/silabs/si91x/mcu/drivers/peripheral_drivers/src/rsi_adc.c
 )
 
-zephyr_compile_definitions_ifdef(CONFIG_BT_SILABS_SIWX91X
-  SLI_SI91X_ENABLE_BLE
-)
-zephyr_library_sources_ifdef(CONFIG_BT_SILABS_SIWX91X
-  ${WISECONNECT}/components/device/silabs/si91x/wireless/ble/src/rsi_bt_ble.c
-  ${WISECONNECT}/components/device/silabs/si91x/wireless/ble/src/rsi_common_apis.c
-  ${WISECONNECT}/components/device/silabs/si91x/wireless/ble/src/rsi_utils.c
-  ${WISECONNECT}/components/device/silabs/si91x/wireless/ble/src/sl_si91x_ble.c
-)
-
 # FIXME: Replace sli_si91x_clock_manager.c by native Zephyr access to the clocks
 if(CONFIG_CLOCK_CONTROL_SILABS_SIWX91X OR CONFIG_SOC_SIWX91X_PM_BACKEND_PMGR)
   zephyr_compile_definitions(
@@ -200,22 +195,11 @@ zephyr_library_sources_ifdef(CONFIG_WDT_SILABS_SIWX91X
 )
 
 if(CONFIG_SILABS_SIWX91X_NWP)
-  wiseconnect_get_ram_config("sram0" RAM_MEM_CONFIG)
-  zephyr_compile_definitions(
-    SL_SI91X_SI917_RAM_MEM_CONFIG=${RAM_MEM_CONFIG}
-  )
   zephyr_include_directories(
     # FIXME: find why this directory is not included when CMSIS_RTOS_V2=y
     ${ZEPHYR_BASE}/include/zephyr/portability
   )
-  zephyr_library_sources(
-    nwp_fw_version.c
-  )
-  zephyr_library_sources_ifdef(CONFIG_SIWX91X_FIRMWARE_UPGRADE
-    ${WISECONNECT}/components/device/silabs/si91x/wireless/firmware_upgrade/firmware_upgradation.c
-  )
-  zephyr_include_directories(.)
-endif() # CONFIG_SILABS_SIWX91X_NWP
+endif()
 
 if(CONFIG_SILABS_SISDK_SLEEPTIMER)
   zephyr_include_directories(

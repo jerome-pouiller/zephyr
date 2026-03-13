@@ -22,12 +22,16 @@ struct net_buf;
  * the reply.
  */
 #define SIWX91X_FRAME_FLAG_NO_REPLY    BIT(2)
+/* Request to siwx91x_nwp_send_buf() and siwx91x_nwp_send_frame() to not erase the 16 first bytes */
+#define SIWX91X_FRAME_FLAG_NO_HDR_RESET BIT(3)
+/* On Tx, shift the payload (the part after the descriptor) by one byte. This is required by
+ * Bluetooth frame because the HCI command has to be placed in the descriptor part which is in
+ * another fragment
+ */
+#define SIWX91X_FRAME_FLAG_SHIFT_PAYLOAD_1_BYTE BIT(4)
 
 struct net_buf *siwx91x_nwp_send_frame(const struct device *dev, struct net_buf *buf,
 				       uint16_t command, int queue_id, uint8_t flags);
-struct net_buf *siwx91x_nwp_send_buf(const struct device *dev, const void *buf, size_t len,
-				     uint16_t command, int queue_id, uint8_t flags);
-
 void siwx91x_nwp_tx_flush_lock(const struct device *dev);
 void siwx91x_nwp_tx_unlock(const struct device *dev);
 

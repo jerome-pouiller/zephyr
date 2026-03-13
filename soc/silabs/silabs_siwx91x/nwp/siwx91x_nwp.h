@@ -8,6 +8,7 @@
 #include <zephyr/device.h>
 #include <zephyr/types.h>
 #include <zephyr/kernel.h>
+#include <zephyr/net/wifi.h>
 #include "sl_wifi.h"
 
 struct net_buf;
@@ -125,12 +126,17 @@ struct siwx91x_nwp_wifi_cb {
 	void (*on_rx)(const struct siwx91x_nwp_wifi_cb *, struct net_buf *);
 	void (*on_scan_results)(const struct siwx91x_nwp_wifi_cb *, struct net_buf *);
 	void (*on_join)(const struct siwx91x_nwp_wifi_cb *, struct net_buf *);
-	void (*on_sta_connect)(const struct siwx91x_nwp_wifi_cb *, struct net_buf *);
-	void (*on_sta_disconnect)(const struct siwx91x_nwp_wifi_cb *, struct net_buf *);
+	void (*on_sta_connect)(const struct siwx91x_nwp_wifi_cb *, uint8_t remote_addr[WIFI_MAC_ADDR_LEN]);
+	void (*on_sta_disconnect)(const struct siwx91x_nwp_wifi_cb *, uint8_t remote_addr[WIFI_MAC_ADDR_LEN]);
+
+	void (*on_sock_select)(const struct siwx91x_nwp_wifi_cb *, struct net_buf *);
+	void (*on_sock_terminate)(const struct siwx91x_nwp_wifi_cb *, struct net_buf *);
+	void (*on_sock_recv)(const struct siwx91x_nwp_wifi_cb *, struct net_buf *);
+	void (*on_sock_tcp_ack)(const struct siwx91x_nwp_wifi_cb *, struct net_buf *);
 };
 
 struct siwx91x_nwp_bt_cb {
-	void (*on_rx)(const struct siwx91x_nwp_bt_cb *, struct net_buf *);
+	void (*on_rx)(const struct siwx91x_nwp_bt_cb *, uint8_t type, void *payload, size_t len);
 };
 
 struct siwx91x_nwp_cmd_queue {
@@ -192,5 +198,6 @@ void siwx91x_nwp_register_wifi(const struct device *dev, const struct siwx91x_nw
 void siwx91x_nwp_register_bt(const struct device *dev, const struct siwx91x_nwp_bt_cb *val);
 int siwx91x_nwp_reset(const struct device *dev, uint8_t oper_mode, bool hidden_ssid,
 		      uint8_t max_num_sta);
+int siwx91x_nwp_apply_power_profile(const struct device *dev);
 
 #endif

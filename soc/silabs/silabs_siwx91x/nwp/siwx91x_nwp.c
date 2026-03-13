@@ -11,9 +11,10 @@
 #include "siwx91x_nwp_bus.h"
 #include "siwx91x_nwp_api.h"
 #include "siwx91x_nwp_fw.h"
-#include "nwp_fw_version.h"
+#include "siwx91x_nwp_fw_version.h"
 #include "wiseconnect/components/device/silabs/si91x/wireless/ble/inc/sl_si91x_ble.h"
 #include "wiseconnect/components/device/silabs/si91x/mcu/drivers/service/power_manager/inc/sl_si91x_power_manager.h"
+#include "wiseconnect/components/device/silabs/si91x/wireless/ble/inc/rsi_ble_common_config.h"
 
 LOG_MODULE_REGISTER(siwx91x_nwp, CONFIG_SIWX91X_NWP_LOG_LEVEL);
 
@@ -257,15 +258,9 @@ static int siwx91x_nwp_compute_config(const struct device *dev,
 }
 
 int siwx91x_nwp_reset(const struct device *dev, uint8_t oper_mode,
-		      bool hidden_ssid, uint8_t max_num_sta)
+			bool hidden_ssid, uint8_t max_num_sta)
 {
-	struct siwx91x_nwp_data *data = dev->data;
 	sl_wifi_system_boot_configuration_t nwp_config;
-	sl_wifi_system_dynamic_pool_t ta_pool = {
-		.tx_ratio_in_buffer_pool     = 1,
-		.rx_ratio_in_buffer_pool     = 1,
-		.global_ratio_in_buffer_pool = 1,
-	};
 	bool enable_pll = false;
 	int ret;
 
@@ -276,14 +271,12 @@ int siwx91x_nwp_reset(const struct device *dev, uint8_t oper_mode,
 	}
 
 	siwx91x_nwp_tx_flush_lock(dev);
-	/* FXIME: is it sufficient to reset the firmware? */
-	siwx91x_nwp_fw_reset(dev);
-	ret = k_sem_take(&data->firmware_ready, K_SECONDS(5));
-	if (ret) {
-		return -EIO;
-	}
+	/* siwx91x_nwp_soft_reset() is not required for the initial boot, but this allow to use the
+	 * same code than for reset.
+	 */
+	siwx91x_nwp_soft_reset(dev);
 	siwx91x_nwp_opermode(dev, &nwp_config);
-	siwx91x_nwp_dynamic_pool(dev, &ta_pool);
+	siwx91x_nwp_dynamic_pool(dev, 1, 1, 1);
 	siwx91x_nwp_feature(dev, enable_pll);
 	siwx91x_nwp_tx_unlock(dev);
 
@@ -403,7 +396,13 @@ static int siwx91x_nwp_init(const struct device *dev)
 	}
 
 	config->config_irq(dev);
+#if CONFIG_NET_BUF_DATA_SIZE < SIWX91X_MAX_PAYLOAD_SIZE
+	__ASSERT_NO_MSG(config->rx_pool);
+	rx_buf_pool = config->rx_pool;
+#else
+	__ASSERT_NO_MSG(!config->rx_pool);
 	net_pkt_get_info(NULL, NULL, &rx_buf_pool, NULL);
+#endif
 	k_thread_create(&data->thread_id, config->thread_stack, config->thread_stack_size,
 			siwx91x_nwp_thread, (void *)dev, rx_buf_pool, NULL,
 			config->thread_priority, 0, K_NO_WAIT);
@@ -411,6 +410,11 @@ static int siwx91x_nwp_init(const struct device *dev)
 	ret = siwx91x_nwp_fw_boot(dev);
 	if (ret) {
 		return ret;
+	}
+	siwx91x_nwp_fw_reset(dev);
+	ret = k_sem_take(&data->firmware_ready, K_SECONDS(5));
+	if (ret) {
+		return -EIO;
 	}
 	ret = siwx91x_nwp_reset(dev, WIFI_STA_MODE, false, 0);
 	if (ret) {

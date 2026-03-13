@@ -7,10 +7,8 @@ config WIFI_SILABS_SIWX91X
 	depends on DT_HAS_SILABS_SIWX91X_WIFI_ENABLED
 	depends on NETWORKING
 	select SILABS_SIWX91X_NWP
-	select WIFI_USE_NATIVE_NETWORKING
 	select NET_L2_ETHERNET_RESERVE_HEADER
 	select NET_L2_WIFI_MGMT
-	select NET_L2_ETHERNET
 	help
 	  Enable WiFi driver for the Silabs SiWx91x SoC series.
 
@@ -19,5 +17,28 @@ if WIFI_SILABS_SIWX91X
 module = SIWX91X_WIFI
 module-str = siwx91x_wifi
 source "subsys/logging/Kconfig.template.log_config"
+
+choice
+        prompt "Network stack"
+        default WIFI_SILABS_SIWX91X_NET_STACK_NATIVE
+        help
+          Choose "Native" stack if you want a better compatibility with Zephyr
+          features. "Offloaded" stack may provide better resource (power and
+          memory) consumption.
+
+config WIFI_SILABS_SIWX91X_NET_STACK_NATIVE
+        bool "Native"
+        select WIFI_USE_NATIVE_NETWORKING
+        select NET_L2_ETHERNET
+
+endchoice
+
+config WIFI_SILABS_SIWX91X_MFP
+        bool "802.11w Management Frame Protection (MFP) support"
+        default y
+        help
+	  Support for MFP incrase security of the WiFi infrastructures. It is required for WPA3 and
+	  recommended for WPA2 networks. Howver, user may want to disable it to improve TCP
+	  throughput by about 10-12% (≈1–2 Mbps).
 
 endif

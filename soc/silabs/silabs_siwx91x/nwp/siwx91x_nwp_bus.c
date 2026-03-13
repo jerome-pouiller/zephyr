@@ -8,18 +8,30 @@
 #include "siwx91x_nwp.h"
 #include "siwx91x_nwp_bus.h"
 
+#include "wiseconnect/components/device/silabs/si91x/wireless/ble/inc/rsi_ble.h"
+#include "wiseconnect/components/sli_wifi/inc/sli_wifi_constants.h"
+
 LOG_MODULE_DECLARE(siwx91x_nwp, CONFIG_SIWX91X_NWP_LOG_LEVEL);
 
 #ifdef CONFIG_NET_PKT_BUF_USER_DATA_SIZE
 BUILD_ASSERT(CONFIG_NET_PKT_BUF_USER_DATA_SIZE >= sizeof(void *), "net_buf user data too small");
 #endif
 
-static void siwx91x_nwp_cb_rx_bt(const struct device *dev, struct net_buf *buf)
+/* FIXME: These functions should cook the data before to call the callbacks */
+static void siwx91x_nwp_cb_bt_rx(const struct device *dev, struct net_buf *buf)
 {
 	struct siwx91x_nwp_data *data = dev->data;
+	struct siwx91x_frame_desc *desc = (struct siwx91x_frame_desc *)buf->data;
+	uint8_t packet_type = desc->reserved[0];
 
 	if (data->bt && data->bt->on_rx)
-		data->bt->on_rx(data->bt, buf);
+		data->bt->on_rx(data->bt, packet_type, desc->data,
+				buf->len - sizeof(struct siwx91x_frame_desc));
+}
+
+static void siwx91x_nwp_cb_bt_ready(const struct device *dev, struct net_buf *buf)
+{
+	LOG_INF("Bluetooth ready");
 }
 
 static void siwx91x_nwp_cb_rx_wifi(const struct device *dev, struct net_buf *buf)
@@ -49,17 +61,56 @@ static void siwx91x_nwp_cb_join(const struct device *dev, struct net_buf *buf)
 static void siwx91x_nwp_cb_sta_connect(const struct device *dev, struct net_buf *buf)
 {
 	struct siwx91x_nwp_data *data = dev->data;
+	struct siwx91x_frame_desc *desc = (struct siwx91x_frame_desc *)buf->data;
+	uint8_t *remote_addr = desc->data;
 
-	if (data->wifi && data->wifi->on_sta_connect)
-		data->wifi->on_sta_connect(data->wifi, buf);
+	if (!data->wifi || !data->wifi->on_sta_connect) {
+		return;
+	}
+	data->wifi->on_sta_connect(data->wifi, remote_addr);
 }
 
 static void siwx91x_nwp_cb_sta_disconnect(const struct device *dev, struct net_buf *buf)
 {
 	struct siwx91x_nwp_data *data = dev->data;
+	struct siwx91x_frame_desc *desc = (struct siwx91x_frame_desc *)buf->data;
+	uint8_t *remote_addr = desc->data;
 
-	if (data->wifi && data->wifi->on_sta_disconnect)
-		data->wifi->on_sta_disconnect(data->wifi, buf);
+	if (!data->wifi || !data->wifi->on_sta_disconnect) {
+		return;
+	}
+	data->wifi->on_sta_disconnect(data->wifi, remote_addr);
+}
+
+static void siwx91x_nwp_cb_sock_terminate(const struct device *dev, struct net_buf *buf)
+{
+	struct siwx91x_nwp_data *data = dev->data;
+
+	if (!data->wifi || !data->wifi->on_sock_terminate) {
+		return;
+	}
+	data->wifi->on_sock_terminate(data->wifi, buf);
+}
+
+static void siwx91x_nwp_cb_sock_select(const struct device *dev, struct net_buf *buf)
+{
+	struct siwx91x_nwp_data *data = dev->data;
+
+	if (!data->wifi || !data->wifi->on_sock_select) {
+		return;
+	}
+	data->wifi->on_sock_select(data->wifi, buf);
+}
+
+
+static void siwx91x_nwp_cb_sock_tcp_ack(const struct device *dev, struct net_buf *buf)
+{
+	struct siwx91x_nwp_data *data = dev->data;
+
+	if (!data->wifi || !data->wifi->on_sock_tcp_ack) {
+		return;
+	}
+	data->wifi->on_sock_tcp_ack(data->wifi, buf);
 }
 
 static void siwx91x_nwp_cb_card_ready(const struct device *dev, struct net_buf *buf)
@@ -83,14 +134,20 @@ static const struct {
 	uint16_t cmd_id;
 	void (*cb)(const struct device *, struct net_buf *);
 } siwx91x_nwp_rsp_list[] = {
-	{ SLI_BT_Q,        -1 /* wildcard */,                         .cb = siwx91x_nwp_cb_rx_bt            },
-	{ SLI_WLAN_DATA_Q, SLI_RECEIVE_RAW_DATA,                      .cb = siwx91x_nwp_cb_rx_wifi          },
-	{ SLI_WLAN_MGMT_Q, SLI_WIFI_RSP_CARDREADY,                    .cb = siwx91x_nwp_cb_card_ready       },
-	{ SLI_WLAN_MGMT_Q, SLI_WIFI_RSP_JOIN,                         .cb = siwx91x_nwp_cb_join             },
-	{ SLI_WLAN_MGMT_Q, SLI_WIFI_RSP_SCAN_RESULTS,                 .cb = siwx91x_nwp_cb_scan_result      },
-	{ SLI_WLAN_MGMT_Q, SLI_WLAN_RSP_CLIENT_CONNECTED,             .cb = siwx91x_nwp_cb_sta_connect      },
-	{ SLI_WLAN_MGMT_Q, SLI_WLAN_RSP_CLIENT_DISCONNECTED,          .cb = siwx91x_nwp_cb_sta_disconnect   },
-	{ SLI_WLAN_MGMT_Q, SLI_WLAN_RSP_MODULE_STATE,                 .cb = siwx91x_nwp_cb_state            },
+	{ SLI_BT_Q,        RSI_BLE_EVENT_RCP_DATA_RCVD,      .cb = siwx91x_nwp_cb_bt_rx          },
+	{ SLI_BT_Q,        RSI_BT_EVENT_CARD_READY,          .cb = siwx91x_nwp_cb_bt_ready       },
+	{ SLI_WLAN_DATA_Q, SLI_RECEIVE_RAW_DATA,             .cb = siwx91x_nwp_cb_rx_wifi        },
+	/* To be confirmed: When sockets are enabled, we still recieve some raw frames with this ID  */
+	{ SLI_WLAN_DATA_Q, SLI_NET_DUAL_STACK_RX_RAW_DATA_FRAME, .cb = siwx91x_nwp_cb_rx_wifi    },
+	{ SLI_WLAN_MGMT_Q, SLI_WIFI_RSP_CARDREADY,           .cb = siwx91x_nwp_cb_card_ready     },
+	{ SLI_WLAN_MGMT_Q, SLI_WIFI_RSP_JOIN,                .cb = siwx91x_nwp_cb_join           },
+	{ SLI_WLAN_MGMT_Q, SLI_WIFI_RSP_SCAN_RESULTS,        .cb = siwx91x_nwp_cb_scan_result    },
+	{ SLI_WLAN_MGMT_Q, SLI_WLAN_RSP_CLIENT_CONNECTED,    .cb = siwx91x_nwp_cb_sta_connect    },
+	{ SLI_WLAN_MGMT_Q, SLI_WLAN_RSP_CLIENT_DISCONNECTED, .cb = siwx91x_nwp_cb_sta_disconnect },
+	{ SLI_WLAN_MGMT_Q, SLI_WLAN_RSP_MODULE_STATE,        .cb = siwx91x_nwp_cb_state          },
+	{ SLI_WLAN_MGMT_Q, SLI_WLAN_RSP_REMOTE_TERMINATE,    .cb = siwx91x_nwp_cb_sock_terminate },
+	{ SLI_WLAN_MGMT_Q, SLI_WLAN_RSP_SELECT_REQUEST,      .cb = siwx91x_nwp_cb_sock_select    },
+	{ SLI_WLAN_MGMT_Q, SLI_WLAN_RSP_TCP_ACK_INDICATION,  .cb = siwx91x_nwp_cb_sock_tcp_ack   },
 };
 
 struct siwx91x_nwp_cmd_queue *siwx91x_nwp_get_queue(const struct device *dev, int id)
@@ -114,11 +171,11 @@ static int siwx91x_nwp_feed_rx_buffer(const struct device *dev, struct net_buf *
 	struct siwx91x_frame_desc *frame;
 
 	*rx_buf = data->rx_buf_in_progress;
-	if (config->rx_pool) {
-		data->rx_buf_in_progress = net_buf_alloc(config->rx_pool, K_NO_WAIT);
-	} else {
-		data->rx_buf_in_progress = net_pkt_get_reserve_rx_data(SIWX91X_MAX_PAYLOAD_SIZE, K_NO_WAIT);
-	}
+#if CONFIG_NET_BUF_DATA_SIZE < SIWX91X_MAX_PAYLOAD_SIZE
+	data->rx_buf_in_progress = net_buf_alloc(config->rx_pool, K_NO_WAIT);
+#else
+	data->rx_buf_in_progress = net_pkt_get_reserve_rx_data(SIWX91X_MAX_PAYLOAD_SIZE, K_NO_WAIT);
+#endif
 
 	__ASSERT(!*rx_buf || (data->rx_desc[0].addr == (*rx_buf)->data + SIWX91X_NWP_MEMORY_OFFSET_ADDRESS),
 		 "Corrupted state");
@@ -161,17 +218,15 @@ static void siwx91x_nwp_handle_rx(const struct device *dev, struct net_buf *rx_b
 
 	queue = siwx91x_nwp_get_queue(dev, FIELD_GET(0xF000, frame->length_and_queue));
 	if (!queue) {
-		LOG_INF("drop unhandled frame");
+		LOG_INF("Drop unhandled frame");
 		goto end;
 	}
 	cb = NULL;
 	for (i = 0; i < ARRAY_SIZE(siwx91x_nwp_rsp_list); i++) {
-		if (siwx91x_nwp_rsp_list[i].queue == queue->id) {
-			if (siwx91x_nwp_rsp_list[i].cmd_id == frame->command ||
-			    siwx91x_nwp_rsp_list[i].cmd_id == (uint16_t)-1) {
-				cb = siwx91x_nwp_rsp_list[i].cb;
-				break;
-			}
+		if (siwx91x_nwp_rsp_list[i].queue == queue->id &&
+		    siwx91x_nwp_rsp_list[i].cmd_id == frame->command) {
+			cb = siwx91x_nwp_rsp_list[i].cb;
+			break;
 		}
 	}
 	req_buf = queue->tx_in_progress;
@@ -201,7 +256,7 @@ static void siwx91x_nwp_handle_rx(const struct device *dev, struct net_buf *rx_b
 		cb(dev, rx_buf);
 	}
 	if (!req_buf && !cb) {
-		LOG_INF("drop unhandled frame: %d/0x%02x", queue->id, frame->command);
+		LOG_INF("Drop unhandled frame: %d/0x%04x", queue->id, frame->command);
 	}
 end:
 	net_buf_unref(rx_buf);
@@ -219,7 +274,8 @@ static void siwx91x_nwp_handle_tx(const struct device *dev, struct siwx91x_nwp_c
 	buf = k_fifo_get(&queue->tx_queue, K_NO_WAIT);
 	__ASSERT(buf, "Get Tx event while tx_qeue is empty");
 
-	if (!buf->frags) {
+	if (!buf->frags ||
+	    (buf->len == sizeof(struct siwx91x_frame_desc) && buf->frags && !buf->frags->frags)) {
 		/* Hoora, we are using zero-copy path */
 		data->tx_buf_in_progress = net_buf_ref(buf);
 		len = net_buf_frags_len(data->tx_buf_in_progress);
@@ -242,12 +298,30 @@ static void siwx91x_nwp_handle_tx(const struct device *dev, struct siwx91x_nwp_c
 	}
 
 	__ASSERT(len >= sizeof(struct siwx91x_frame_desc), "Corrupted buffer");
-	data->tx_desc[0].addr = SIWX91X_NWP_MEMORY_OFFSET_ADDRESS + data->tx_buf_in_progress->data;
+	data->tx_desc[0].addr = data->tx_buf_in_progress->data;
 	data->tx_desc[0].length = sizeof(struct siwx91x_frame_desc);
-	data->tx_desc[1].addr = data->tx_desc[0].addr + sizeof(struct siwx91x_frame_desc);
+
+	if (data->tx_buf_in_progress->frags) {
+		__ASSERT(data->tx_buf_in_progress->len == sizeof(struct siwx91x_frame_desc),
+			 "Corrupted net_buf");
+		__ASSERT(!data->tx_buf_in_progress->frags->frags,
+			 "Corrupted net_buf");
+		data->tx_desc[1].addr = data->tx_buf_in_progress->frags->data;
+	} else {
+		data->tx_desc[1].addr = data->tx_buf_in_progress->data +
+					sizeof(struct siwx91x_frame_desc);
+	}
 	data->tx_desc[1].length = len - sizeof(struct siwx91x_frame_desc);
-	compiler_barrier(); /* Useful? */
-	LOG_HEXDUMP_DBG(data->tx_buf_in_progress->data, len, "nwp tx:");
+	if (flags & SIWX91X_FRAME_FLAG_SHIFT_PAYLOAD_1_BYTE) {
+		data->tx_desc[1].addr += 1;
+		data->tx_desc[1].length -= 1;
+	}
+	LOG_HEXDUMP_DBG(data->tx_desc[0].addr, data->tx_desc[0].length, "nwp tx:");
+	LOG_HEXDUMP_DBG(data->tx_desc[1].addr, MIN(data->tx_desc[1].length, 128), "...");
+	data->tx_desc[0].addr += SIWX91X_NWP_MEMORY_OFFSET_ADDRESS;
+	data->tx_desc[1].addr += SIWX91X_NWP_MEMORY_OFFSET_ADDRESS;
+
+	compiler_barrier(); /* Ensure we write tx_desc before m4_int_set. Maybe useless. */
 	config->m4_regs->m4_int_set = SIWX91X_TX_PKT_PENDING;
 	net_buf_unref(buf);
 }
@@ -300,23 +374,24 @@ void siwx91x_nwp_thread(void *arg1, void *arg2, void *arg3)
 	for (;;) {
 		ret = k_poll(events, ARRAY_SIZE(events), K_FOREVER);
 		nwp_status = cfg->ta_regs->status;
+		__ASSERT(!(nwp_status & SIWX91X_NWP_ASSERT_INTR), "NWP asserted");
 		/* Tx path */
 		for (i = 0; i < ARRAY_SIZE(data->cmd_queues); i++) {
 			if (events[i].state == K_POLL_STATE_FIFO_DATA_AVAILABLE) {
 				events[i].state = K_POLL_STATE_NOT_READY;
 				if (data->cmd_queues[i].id == SLI_BT_Q &&
 				    (nwp_status & SIWX91X_NWP_BLE_BUFFER_FULL)) {
-					LOG_DBG("event: Tx data delayed (queue %d)", i);
+					LOG_DBG("event: Tx data delayed (queue %d)", data->cmd_queues[i].id);
 					break;
 				}
 				if (data->cmd_queues[i].id == SLI_WLAN_DATA_Q &&
 				    (nwp_status & SIWX91X_NWP_WIFI_BUFFER_FULL)) {
-					LOG_DBG("event: Tx data delayed (queue %d)", i);
+					LOG_DBG("event: Tx data delayed (queue %d)", data->cmd_queues[i].id);
 					break;
 				}
 				siwx91x_nwp_handle_tx(dev, &data->cmd_queues[i]);
 				lock_tx_queues = true;
-				LOG_DBG("event: Tx data send (queue %d)", i);
+				LOG_DBG("event: Tx data send (queue %d)", data->cmd_queues[i].id);
 				break;
 			}
 		}
@@ -376,10 +451,13 @@ void siwx91x_nwp_thread(void *arg1, void *arg2, void *arg3)
 __ramfunc static void siwx91x_nwp_busy_poll(const struct device *dev, int reg_bit)
 {
 	const struct siwx91x_nwp_config *cfg = dev->config;
+	/* These aliases ensures we don't access to cfg from the critical section */
+	volatile uint32_t *reg_set = &cfg->m4_regs->m4_int_set;
+	volatile uint32_t *reg_clr = &cfg->m4_regs->m4_int_clr;
 
 	__disable_irq();
-	cfg->m4_regs->m4_int_set = reg_bit;
-	while (cfg->m4_regs->m4_int_clr & reg_bit) {
+	*reg_set = reg_bit;
+	while (*reg_clr & reg_bit) {
 		/* empty */;
 	}
 	__enable_irq();
@@ -441,8 +519,12 @@ struct net_buf *siwx91x_nwp_send_frame(const struct device *dev, struct net_buf 
 		LOG_DBG("Fragmented frame");
 	}
 
-	/* FIXME: Should we leave that operation to the caller? */
-	memset(desc, 0, sizeof(struct siwx91x_frame_desc));
+	if (!(flags & SIWX91X_FRAME_FLAG_NO_HDR_RESET)) {
+		memset(desc, 0, sizeof(struct siwx91x_frame_desc));
+	}
+	if (flags & SIWX91X_FRAME_FLAG_SHIFT_PAYLOAD_1_BYTE) {
+		len -= 1;
+	}
 	desc->command = command;
 	desc->length_and_queue = FIELD_PREP(0x0FFF, len - sizeof(struct siwx91x_frame_desc));
 	desc->length_and_queue |= FIELD_PREP(0xF000, queue_id);
@@ -466,29 +548,6 @@ struct net_buf *siwx91x_nwp_send_frame(const struct device *dev, struct net_buf 
 	k_sem_take(&queue->tx_done, K_FOREVER);
 	k_sem_give(&queue->sync_frame_in_queue);
 	return *(struct net_buf **)net_buf_user_data(buf);
-}
-
-/* sli_si91x_driver_send_command */
-struct net_buf *siwx91x_nwp_send_buf(const struct device *dev, const void *buf, size_t len,
-                                    uint16_t command, int queue_id, uint8_t flags)
-{
-	/* Originally, we allocate this buffer on the stack. However, since this this buffer is
-	 * quite large and several thread call it, it is cheaper to allocate a static buffer.
-	 * This prevents to have several commands in parallel. If you consider command for wifi
-	 * should not lock commands for bluetooth, you may increase size of this pool (or use
-	 * another pool, or allocate on the stack).
-	 */
-	NET_BUF_POOL_FIXED_DEFINE(siwx91x_nwp_cmd_pool, 1, 160, 4, NULL);
-	struct net_buf *cmd, *reply;
-
-	cmd = net_buf_alloc(&siwx91x_nwp_cmd_pool, K_FOREVER);
-	__ASSERT(!(flags & SIWX91X_FRAME_FLAG_ASYNC), "Invalid call");
-	__ASSERT(sizeof(struct siwx91x_frame_desc) + len <= 160, "Invalid call: %d > 160", len);
-	net_buf_add(cmd, sizeof(struct siwx91x_frame_desc));
-	net_buf_add_mem(cmd, buf, len);
-	reply = siwx91x_nwp_send_frame(dev, cmd, command, queue_id, flags);
-	net_buf_unref(cmd);
-	return reply;
 }
 
 void siwx91x_nwp_tx_flush_lock(const struct device *dev)

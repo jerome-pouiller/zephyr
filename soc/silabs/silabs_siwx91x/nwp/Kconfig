@@ -8,6 +8,7 @@ config SILABS_SIWX91X_NWP
 	select SRAM_SW_ISR_TABLE
 	select CODE_DATA_RELOCATION_SRAM
 	select NET_BUF
+	select POLL
 	help
 	  Add support for Network Coprocessor (also named NWP) presents on SiWx91x parts.
 

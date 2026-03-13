@@ -12,7 +12,7 @@ LOG_MODULE_DECLARE(siwx91x_wifi, CONFIG_SIWX91X_WIFI_LOG_LEVEL);
 void siwx91x_wifi_on_scan_results(const struct siwx91x_nwp_wifi_cb *ctxt, struct net_buf *buf)
 {
 	struct net_if *iface = net_if_get_first_wifi();
-	struct siwx91x_wifi_data *data = iface->if_dev->dev->data;
+	struct siwx91x_wifi_data *data = net_if_get_device(iface)->data;
 	struct siwx91x_frame_desc *frame = (struct siwx91x_frame_desc *)buf->data;
 	struct ieee80211_beacon *payload = (struct ieee80211_beacon *)frame->data;
 	struct wifi_scan_result tmp = {
