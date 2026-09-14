@@ -188,7 +188,7 @@ static DEVICE_API(bt_hci, siwx91x_api) = {
 	};                                                                                         \
 	static struct hci_data hci_data_##inst;                                                    \
 	DEVICE_DT_INST_DEFINE(inst, siwx91x_bt_init, NULL, &hci_data_##inst, &hci_config_##inst,   \
-			      POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &siwx91x_api)
+			      POST_KERNEL, CONFIG_BT_HCI_INIT_PRIORITY, &siwx91x_api)
 
 /* Only one instance supported right now */
 HCI_DEVICE_INIT(0)
