@@ -29,7 +29,7 @@ configdefault SYSTEM_CLOCK_HW_CYCLES_PER_SEC_RUNTIME_UPDATE
 # prevent proper use of the system with these threads.
 configdefault SYS_CLOCK_TICKS_PER_SEC
 	default 128 if !TICKLESS_KERNEL && SILABS_SLEEPTIMER_TIMER
-	default 1024 if SILABS_SLEEPTIMER_TIMER || SILABS_SIWX91X_NWP
+	default 1024 if SILABS_SLEEPTIMER_TIMER || MFD_SILABS_SIWX91X_NWP
 
 configdefault CLOCK_CONTROL
 	default y
@@ -56,7 +56,7 @@ configdefault PM_POLICY_DEVICE_CONSTRAINTS
 
 endif # PM_DEVICE
 
-if SILABS_SIWX91X_NWP
+if MFD_SILABS_SIWX91X_NWP
 
 # Commands are passed to the network coprocessor through
 # sli_wifi_send_command(), whose callers build the request structure on the

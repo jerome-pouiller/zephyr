@@ -5,8 +5,8 @@
  */
 #include <zephyr/logging/log.h>
 #include <zephyr/net/wifi_utils.h>
+#include <zephyr/drivers/mfd/silabs_siwx91x_nwp.h>
 
-#include <siwx91x_nwp.h>
 #include "siwx91x_wifi.h"
 #include "siwx91x_wifi_scan.h"
 

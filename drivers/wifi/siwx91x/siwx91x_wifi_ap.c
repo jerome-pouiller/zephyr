@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include <zephyr/logging/log.h>
-#include <siwx91x_nwp.h>
+#include <zephyr/drivers/mfd/silabs_siwx91x_nwp.h>
+
 #include "siwx91x_wifi.h"
 
 #include "sli_wifi_utility.h"

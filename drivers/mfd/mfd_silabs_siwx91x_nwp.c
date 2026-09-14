@@ -17,8 +17,8 @@
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/devicetree.h>
+#include <zephyr/drivers/mfd/silabs_siwx91x_nwp.h>
 
-#include "siwx91x_nwp.h"
 #include <nwp_fw_version.h>
 #include <sl_wifi_callback_framework.h>
 
@@ -31,7 +31,7 @@
 #define AP_MAX_NUM_STA 4
 #define SL_SI91X_EXT_FEAT_FRONT_END_MSK (BIT(30) | BIT(29))
 
-LOG_MODULE_REGISTER(siwx91x_nwp);
+LOG_MODULE_REGISTER(siwx91x_nwp, CONFIG_MFD_LOG_LEVEL);
 
 BUILD_ASSERT(DT_REG_SIZE(DT_CHOSEN(zephyr_sram)) == KB(195) ||
 	     DT_REG_SIZE(DT_CHOSEN(zephyr_sram)) == KB(255) ||
@@ -538,7 +538,7 @@ static int siwx91x_nwp_init(const struct device *dev)
 }
 
 #if defined(CONFIG_MBEDTLS_INIT)
-BUILD_ASSERT(CONFIG_SIWX91X_NWP_INIT_PRIORITY < CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
+BUILD_ASSERT(CONFIG_MFD_SILABS_SIWX91X_NWP_INIT_PRIORITY < CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
 	     "mbed TLS must be initialized after the NWP.");
 #endif
 
@@ -570,6 +570,6 @@ BUILD_ASSERT(CONFIG_SIWX91X_NWP_INIT_PRIORITY < CONFIG_KERNEL_INIT_PRIORITY_DEFA
                                                                                                    \
 	DEVICE_DT_INST_DEFINE(inst, &siwx91x_nwp_init, NULL, &siwx91x_nwp_data_##inst,             \
 			      &siwx91x_nwp_config_##inst, POST_KERNEL,                             \
-			      CONFIG_SIWX91X_NWP_INIT_PRIORITY, NULL);
+			      CONFIG_MFD_SILABS_SIWX91X_NWP_INIT_PRIORITY, NULL);
 
 DT_INST_FOREACH_STATUS_OKAY(SIWX91X_NWP_DEFINE)

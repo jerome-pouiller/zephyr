@@ -2,10 +2,11 @@
  * Copyright (c) 2025 Silicon Laboratories Inc.
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef SIWX91X_NWP_H
-#define SIWX91X_NWP_H
+#ifndef ZEPHYR_INCLUDE_DRIVERS_MFD_SILABS_SIWX91X_NWP_H_
+#define ZEPHYR_INCLUDE_DRIVERS_MFD_SILABS_SIWX91X_NWP_H_
 
 #include <zephyr/device.h>
+
 #include <sl_wifi.h>
 
 #define SIWX91X_INTERFACE_MASK (0x03)
@@ -93,4 +94,4 @@ int siwx91x_store_country_code(const struct device *dev, const char *country_cod
  */
 const char *siwx91x_get_country_code(const struct device *dev);
 
-#endif
+#endif /* ZEPHYR_INCLUDE_DRIVERS_MFD_SILABS_SIWX91X_NWP_H_ */

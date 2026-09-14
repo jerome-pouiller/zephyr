@@ -1093,6 +1093,16 @@ MBOX
              channel-mask = <0x1>;
      };
 
+MFD
+===
+
+* The Silicon Labs SiWx91x NWP (Network Wireless Processor) driver has moved from
+  :file:`soc/silabs/silabs_siwx91x/siwg917/` to :file:`drivers/mfd/`. Its Kconfig options
+  have been renamed accordingly: ``SILABS_SIWX91X_NWP`` becomes
+  :kconfig:option:`CONFIG_MFD_SILABS_SIWX91X_NWP` and ``SIWX91X_NWP_INIT_PRIORITY`` becomes
+  :kconfig:option:`CONFIG_MFD_SILABS_SIWX91X_NWP_INIT_PRIORITY`. The driver API header is now
+  :zephyr_file:`include/zephyr/drivers/mfd/silabs_siwx91x_nwp.h`.
+
 MSPI
 ====
 
