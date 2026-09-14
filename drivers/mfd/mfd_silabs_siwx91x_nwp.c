@@ -506,6 +506,7 @@ static int siwx91x_nwp_init(const struct device *dev)
 	 */
 	ret = sl_wifi_init(&network_config, NULL, sl_wifi_default_event_handler);
 	if (ret) {
+		LOG_ERR("sl_wifi_init: failed with status %#x", ret);
 		return -EINVAL;
 	}
 
