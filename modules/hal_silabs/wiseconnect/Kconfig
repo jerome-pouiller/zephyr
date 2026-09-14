@@ -1,8 +1,11 @@
 # Copyright (c) 2025 Silicon Laboratories Inc.
 # SPDX-License-Identifier: Apache-2.0
 
+# The WiSeConnect HAL also provides the MCU support for the SiWx91x SoC. These
+# options are only relevant in that case. The wireless part of the HAL is
+# host-agnostic and is enabled by the NWP driver instead.
 menu "WiSeConnect configuration"
-	depends on HAS_SILABS_WISECONNECT
+	depends on SOC_FAMILY_SILABS_SIWX91X
 
 config SILABS_SISDK_SLEEPTIMER
 	bool "Sleeptimer service"
@@ -12,3 +15,45 @@ config SILABS_SISDK_SLEEPTIMER
 	  Set if the Sleeptimer HAL module is used.
 
 endmenu
+
+# WiSeConnect requirements. They are host-agnostic, so they cannot be declared in
+# the SoC. They have to be declared here because Kconfig only honors the first
+# "default" it encounters and modules/Kconfig is parsed before kernel/Kconfig.
+if MFD_SILABS_SIWX91X_NWP
+
+# Commands are passed to the network coprocessor through
+# sli_wifi_send_command(), whose callers build the request structure on the
+# stack of the calling thread: 1408 bytes for a common flash write or erase,
+# 1028 bytes for a firmware upgrade chunk. Including the rest of the call
+# chain, any thread issuing such a command needs roughly 2.7 kB of stack. The
+# MPU cannot be enabled on this SoC, so an overflow is silent: it corrupts the
+# neighbouring thread's stack instead of faulting.
+#
+# These are also the stack sizes WiSeConnect needs to initialize at all, which
+# on its own required more than the 1024 byte default (especially with PM).
+config MAIN_STACK_SIZE
+	default 4096
+
+config SHELL_STACK_SIZE
+	default 4096
+
+config SYSTEM_WORKQUEUE_STACK_SIZE
+	default 4096
+
+config BT_RX_STACK_SIZE
+	default 4096
+
+# WiSeConnect relies on the CMSIS RTOS priority range
+config NUM_PREEMPT_PRIORITIES
+	default 56
+
+config CMSIS_V2_THREAD_DYNAMIC_MAX_COUNT
+	default 2
+
+config CMSIS_V2_THREAD_DYNAMIC_STACK_SIZE
+	default 1024
+
+config CMSIS_V2_THREAD_MAX_STACK_SIZE
+	default 2048
+
+endif # MFD_SILABS_SIWX91X_NWP

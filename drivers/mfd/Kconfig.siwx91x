@@ -5,7 +5,7 @@ menuconfig MFD_SILABS_SIWX91X_NWP
 	bool "Silabs SiWx91x Network Coprocessor"
 	default y
 	depends on DT_HAS_SILABS_SIWX91X_NWP_ENABLED
-	select CODE_DATA_RELOCATION_SRAM
+	select HAS_SILABS_WISECONNECT
 	select CMSIS_RTOS_V2
 	select POLL
 	select DYNAMIC_THREAD
@@ -22,6 +22,8 @@ config MFD_SILABS_SIWX91X_NWP_AHB
 	bool
 	default y
 	depends on DT_HAS_SILABS_SIWX91X_NWP_ENABLED
+	depends on SOC_FAMILY_SILABS_SIWX91X
+	select CODE_DATA_RELOCATION_SRAM
 	help
 	  Host interface used when the NWP shares the die with the host, which is the
 	  case of the SiWG917 parts. The NWP is then reachable through the internal AHB
