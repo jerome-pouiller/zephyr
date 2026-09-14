@@ -1,22 +1,20 @@
 /**
  * @file
- * @brief Network Processor Initialization for SiWx91x.
+ * @brief Bus agnostic driver for the SiWx91x Network Processor.
  *
- * This file contains the initialization routine for the (ThreadArch) network processor
- * on the SiWx91x platform. The component is responsible for setting up the necessary
- * hardware and software components to enable network communication.
+ * The NWP (Network Wireless Processor) handles the Wi-Fi and Bluetooth
+ * connectivity of the SiWx91x parts. This file boots it and configures the
+ * features requested by the Zephyr configuration. It is not aware of the way
+ * the host is connected to the NWP: this is the job of the backends (see
+ * mfd_silabs_siwx91x_nwp.h).
  *
  * Copyright (c) 2025 Silicon Laboratories Inc.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define DT_DRV_COMPAT silabs_siwx91x_nwp
-
 #include <zephyr/kernel.h>
 #include <zephyr/net/wifi.h>
-#include <zephyr/drivers/pinctrl.h>
 #include <zephyr/logging/log.h>
-#include <zephyr/devicetree.h>
 #include <zephyr/drivers/mfd/silabs_siwx91x_nwp.h>
 
 #include <nwp_fw_version.h>
@@ -26,32 +24,13 @@
 #ifdef CONFIG_BT_SILABS_SIWX91X
 #include <rsi_ble_common_config.h>
 #endif
-#include <sl_si91x_power_manager.h>
+
+#include "mfd_silabs_siwx91x_nwp.h"
 
 #define AP_MAX_NUM_STA 4
 #define SL_SI91X_EXT_FEAT_FRONT_END_MSK (BIT(30) | BIT(29))
 
 LOG_MODULE_REGISTER(siwx91x_nwp, CONFIG_MFD_LOG_LEVEL);
-
-BUILD_ASSERT(DT_REG_SIZE(DT_CHOSEN(zephyr_sram)) == KB(195) ||
-	     DT_REG_SIZE(DT_CHOSEN(zephyr_sram)) == KB(255) ||
-	     DT_REG_SIZE(DT_CHOSEN(zephyr_sram)) == KB(319));
-
-struct siwx91x_nwp_data {
-	char current_country_code[WIFI_COUNTRY_CODE_LEN];
-};
-
-struct siwx91x_nwp_config {
-	const struct pinctrl_dev_config *pcfg;
-	void (*config_irq)(const struct device *dev);
-	uint32_t stack_size;
-	uint8_t antenna_selection;
-	bool antenna_ext_gpios;
-	bool support_1p8v;
-	bool enable_xtal_correction;
-	bool qspi_80mhz_clk;
-	uint32_t clock_frequency;
-};
 
 typedef struct {
 	const char *const *codes;
@@ -139,22 +118,6 @@ const sli_wifi_set_region_ap_request_t *siwx91x_find_sdk_region_table(uint8_t re
 	return NULL;
 }
 
-static void siwx91x_apply_sram_config(sl_wifi_system_boot_configuration_t *boot_config)
-{
-	/* The size does not match exactly because 1 KB is reserved at the start of the RAM */
-	size_t sram_size = DT_REG_SIZE(DT_CHOSEN(zephyr_sram));
-
-	if (sram_size == KB(195)) {
-		boot_config->ext_custom_feature_bit_map |= SL_SI91X_EXT_FEAT_480K_M4SS_192K;
-	} else if (sram_size == KB(255)) {
-		boot_config->ext_custom_feature_bit_map |= SL_SI91X_EXT_FEAT_416K_M4SS_256K;
-	} else if (sram_size == KB(319)) {
-		boot_config->ext_custom_feature_bit_map |= SL_SI91X_EXT_FEAT_352K_M4SS_320K;
-	} else {
-		k_panic();
-	}
-}
-
 static void siwx91x_apply_boot_config(const struct device *dev,
 				      sl_wifi_system_boot_configuration_t *boot_config)
 {
@@ -171,6 +134,14 @@ static void siwx91x_apply_boot_config(const struct device *dev,
 		{ cfg->qspi_80mhz_clk, &boot_config->ext_custom_feature_bit_map,
 		  SL_SI91X_EXT_FEAT_NWP_QSPI_80MHZ_CLK_ENABLE },
 	};
+
+	/* The host interface dictates the NWP/host memory split and the way the
+	 * host and the NWP handshake, so let the backend contribute first.
+	 */
+	boot_config->feature_bit_map |= cfg->feature_bit_map;
+	boot_config->custom_feature_bit_map |= cfg->custom_feature_bit_map;
+	boot_config->ext_custom_feature_bit_map |= cfg->ext_custom_feature_bit_map;
+	boot_config->config_feature_bit_map |= cfg->config_feature_bit_map;
 
 	for (int i = 0; i < ARRAY_SIZE(features); i++) {
 		if (features[i].enabled) {
@@ -386,7 +357,6 @@ static int siwx91x_get_nwp_config(const struct device *dev,
 		return -EINVAL;
 	}
 
-	siwx91x_apply_sram_config(boot_config);
 	siwx91x_apply_boot_config(dev, boot_config);
 
 	/* Apply TA clock configuration based on DT property */
@@ -485,19 +455,10 @@ int siwx91x_nwp_apply_power_profile(const struct device *dev,
 	return 0;
 }
 
-static int siwx91x_nwp_init(const struct device *dev)
+int siwx91x_nwp_common_init(const struct device *dev)
 {
-	const struct siwx91x_nwp_config *config = dev->config;
 	sl_wifi_device_configuration_t network_config;
 	int ret;
-
-	ret = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_DEFAULT);
-	if (ret < 0 && ret != -ENOENT) {
-		return ret;
-	}
-	if (config->antenna_ext_gpios && ret == -ENOENT) {
-		LOG_WRN("'ext-gpios' expects some pinctrl configuration");
-	}
 
 	siwx91x_get_nwp_config(dev, &network_config, WIFI_STA_MODE, false, 0);
 	/* TODO: If sl_net_*_profile() functions will be needed for WiFi then call
@@ -529,48 +490,5 @@ static int siwx91x_nwp_init(const struct device *dev)
 		return -EINVAL;
 	}
 
-	if (IS_ENABLED(CONFIG_PM)) {
-		sl_si91x_power_manager_remove_ps_requirement(SL_SI91X_POWER_MANAGER_PS4);
-	}
-
-	config->config_irq(dev);
-
 	return 0;
 }
-
-#if defined(CONFIG_MBEDTLS_INIT)
-BUILD_ASSERT(CONFIG_MFD_SILABS_SIWX91X_NWP_INIT_PRIORITY < CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
-	     "mbed TLS must be initialized after the NWP.");
-#endif
-
-#define SIWX91X_NWP_DEFINE(inst)                                                                   \
-                                                                                                   \
-	static void silabs_siwx91x_nwp_irq_configure_##inst(const struct device *dev)              \
-	{                                                                                          \
-		ARG_UNUSED(dev);                                                                   \
-		IRQ_CONNECT(DT_INST_IRQ_BY_NAME(inst, nwp_irq, irq),                               \
-			    DT_INST_IRQ_BY_NAME(inst, nwp_irq, priority), IRQ074_Handler, NULL,    \
-			    0);                                                                    \
-		irq_enable(DT_INST_IRQ_BY_NAME(inst, nwp_irq, irq));                               \
-	};                                                                                         \
-                                                                                                   \
-	static struct siwx91x_nwp_data siwx91x_nwp_data_##inst = {                                 \
-	};                                                                                         \
-                                                                                                   \
-	PINCTRL_DT_INST_DEFINE(inst);                                                              \
-	static const struct siwx91x_nwp_config siwx91x_nwp_config_##inst = {                       \
-		.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst),                                      \
-		.config_irq = silabs_siwx91x_nwp_irq_configure_##inst,                             \
-		.support_1p8v = DT_INST_PROP(inst, support_1p8v),                                  \
-		.enable_xtal_correction = DT_INST_PROP(inst, enable_xtal_correction),              \
-		.qspi_80mhz_clk = DT_INST_PROP(inst, qspi_80mhz_clk),                              \
-		.antenna_selection = DT_INST_ENUM_IDX(inst, antenna_selection),                    \
-		.antenna_ext_gpios = DT_INST_ENUM_HAS_VALUE(inst, antenna_selection, ext_gpios),   \
-		.clock_frequency = DT_INST_PROP(inst, clock_frequency),                            \
-	};                                                                                         \
-                                                                                                   \
-	DEVICE_DT_INST_DEFINE(inst, &siwx91x_nwp_init, NULL, &siwx91x_nwp_data_##inst,             \
-			      &siwx91x_nwp_config_##inst, POST_KERNEL,                             \
-			      CONFIG_MFD_SILABS_SIWX91X_NWP_INIT_PRIORITY, NULL);
-
-DT_INST_FOREACH_STATUS_OKAY(SIWX91X_NWP_DEFINE)

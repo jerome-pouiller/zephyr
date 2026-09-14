@@ -18,6 +18,15 @@ menuconfig MFD_SILABS_SIWX91X_NWP
 
 if MFD_SILABS_SIWX91X_NWP
 
+config MFD_SILABS_SIWX91X_NWP_AHB
+	bool
+	default y
+	depends on DT_HAS_SILABS_SIWX91X_NWP_ENABLED
+	help
+	  Host interface used when the NWP shares the die with the host, which is the
+	  case of the SiWG917 parts. The NWP is then reachable through the internal AHB
+	  bus.
+
 config MFD_SILABS_SIWX91X_NWP_INIT_PRIORITY
 	int "SiWx91x Network Processor init priority"
 	default 39
