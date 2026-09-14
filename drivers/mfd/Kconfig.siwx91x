@@ -4,7 +4,7 @@
 menuconfig MFD_SILABS_SIWX91X_NWP
 	bool "Silabs SiWx91x Network Coprocessor"
 	default y
-	depends on DT_HAS_SILABS_SIWX91X_NWP_ENABLED
+	depends on DT_HAS_SILABS_SIWX91X_NWP_ENABLED || DT_HAS_SILABS_SIWX91X_NWP_SPI_ENABLED
 	select HAS_SILABS_WISECONNECT
 	select CMSIS_RTOS_V2
 	select POLL
@@ -29,12 +29,25 @@ config MFD_SILABS_SIWX91X_NWP_AHB
 	  case of the SiWG917 parts. The NWP is then reachable through the internal AHB
 	  bus.
 
+config MFD_SILABS_SIWX91X_NWP_SPI
+	bool
+	default y
+	depends on DT_HAS_SILABS_SIWX91X_NWP_SPI_ENABLED
+	# using select at this point introduces a cyclic dependency
+	depends on SPI
+	depends on GPIO
+	help
+	  Host interface used when the NWP is a standalone chip, which is the case
+	  of the SiWN917 parts. The NWP is then reachable over SPI from any host.
+
 config MFD_SILABS_SIWX91X_NWP_INIT_PRIORITY
 	int "SiWx91x Network Processor init priority"
-	default 39
+	default 39 if MFD_SILABS_SIWX91X_NWP_AHB
+	default KERNEL_INIT_PRIORITY_DEVICE
 	help
 	  Initialization priority of the SiWx91x Network Processor. NWP init must
 	  have a higher priority than services that depend on it, such as Bluetooth,
-	  Wi-Fi and crypto.
+	  Wi-Fi and crypto. When the NWP is accessed over a bus, it also has to be
+	  initialized after that bus.
 
 endif # MFD_SILABS_SIWX91X_NWP

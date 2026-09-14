@@ -364,3 +364,9 @@ if(CONFIG_MFD_SILABS_SIWX91X_NWP_AHB)
   )
 endif() # CONFIG_MFD_SILABS_SIWX91X_NWP_AHB
 
+if(CONFIG_MFD_SILABS_SIWX91X_NWP_SPI)
+  zephyr_library_sources(
+    ${WISECONNECT}/components/device/silabs/si91x/wireless/ncp_interface/sl_si91x_ncp_driver.c
+    ${WISECONNECT}/components/device/silabs/si91x/wireless/ncp_interface/spi/sl_si91x_spi.c
+  )
+endif() # CONFIG_MFD_SILABS_SIWX91X_NWP_SPI
