@@ -1,0 +1,57 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2026 Silicon Laboratories Inc.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <zephyr/dt-bindings/pinctrl/silabs/xg28-pinctrl.h>
+
+/*
+ * The SiWN917 NCP expansion board is plugged on the EXP header. EUSART1 is the
+ * only serial controller left that can be routed to the EXP SPI pins, so the
+ * on-board flash and display, which normally sit on it, are given up.
+ */
+
+&pinctrl {
+	eusart1_exp: eusart1_exp {
+		group0 {
+			pins = <EUSART1_TX_PD7>, <EUSART1_SCLK_PD9>;
+			drive-push-pull;
+			output-high;
+		};
+
+		group1 {
+			pins = <EUSART1_RX_PD8>;
+			input-enable;
+			silabs,input-filter;
+		};
+	};
+};
+
+&ls0xx_ls013b7dh03 {
+	status = "disabled";
+};
+
+&mx25r80 {
+	status = "disabled";
+};
+
+&eusart1 {
+	pinctrl-0 = <&eusart1_exp>;
+	cs-gpios = <&gpioc 8 GPIO_ACTIVE_HIGH>,
+		   <&gpioc 4 GPIO_ACTIVE_LOW>,
+		   <&gpiod 10 GPIO_ACTIVE_LOW>;
+
+	nwp: siwx91x-nwp@2 {
+		compatible = "silabs,siwx91x-nwp-spi";
+		reg = <2>;
+		spi-max-frequency = <DT_FREQ_M(10)>;
+		irq-gpios = <&gpiob 5 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpiob 4 GPIO_ACTIVE_LOW>;
+		antenna-selection = "internal";
+		clock-frequency = <DT_FREQ_M(80)>;
+
+		siwx91x_wifi: wifi {
+			compatible = "silabs,siwx91x-wifi";
+		};
+	};
+};

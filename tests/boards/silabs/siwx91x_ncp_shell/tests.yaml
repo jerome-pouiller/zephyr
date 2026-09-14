@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Silicon Laboratories Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+tests:
+  boards.silabs.siwx91x_ncp_shell:
+    build_only: true
+    tags:
+      - silabs
+      - shell
+      - wifi
+    platform_allow:
+      - xg28_rb4401c
+      - xg29_rb4412a
+    integration_platforms:
+      - xg28_rb4401c

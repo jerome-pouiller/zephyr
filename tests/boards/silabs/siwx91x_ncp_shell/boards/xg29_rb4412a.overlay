@@ -1,0 +1,33 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2026 Silicon Laboratories Inc.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/*
+ * The SiWN917 NCP expansion board is plugged on the EXP header. EUSART1 is
+ * already routed to the EXP SPI pins, only the chip select of the EXP header
+ * has to be added to the ones of the on-board flash and display.
+ *
+ * Note that the EXP header of this board does not carry the pin 11, so RESET_N
+ * of the NWP is left unconnected: a power cycle of the NCP board is required
+ * after each reset of the host.
+ */
+
+&eusart1 {
+	cs-gpios = <&gpioa 4 GPIO_ACTIVE_LOW>,
+		   <&gpioc 6 GPIO_ACTIVE_HIGH>,
+		   <&gpioc 3 GPIO_ACTIVE_LOW>;
+
+	nwp: siwx91x-nwp@2 {
+		compatible = "silabs,siwx91x-nwp-spi";
+		reg = <2>;
+		spi-max-frequency = <DT_FREQ_M(10)>;
+		irq-gpios = <&gpioa 8 GPIO_ACTIVE_HIGH>;
+		antenna-selection = "internal";
+		clock-frequency = <DT_FREQ_M(80)>;
+
+		siwx91x_wifi: wifi {
+			compatible = "silabs,siwx91x-wifi";
+		};
+	};
+};
