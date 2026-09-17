@@ -5,6 +5,7 @@ set(CPC_DIR   ${ZEPHYR_HAL_SILABS_MODULE_DIR}/cpc)
 set(SISDK_DIR ${ZEPHYR_HAL_SILABS_MODULE_DIR}/simplicity_sdk)
 
 zephyr_include_directories(
+  include
   ${ZEPHYR_BASE}/include/zephyr/portability
   ${CPC_DIR}/config
   ${CPC_DIR}/inc
