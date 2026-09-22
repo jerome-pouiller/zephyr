@@ -13,6 +13,10 @@
  * after each reset of the host.
  */
 
+&bt_hci_silabs {
+	status = "disabled";
+};
+
 &eusart1 {
 	cs-gpios = <&gpioa 4 GPIO_ACTIVE_LOW>,
 		   <&gpioc 6 GPIO_ACTIVE_HIGH>,
@@ -29,5 +33,15 @@
 		siwx91x_wifi: wifi {
 			compatible = "silabs,siwx91x-wifi";
 		};
+
+		siwx91x_bt: bt-hci {
+			compatible = "silabs,siwx91x-bt-hci";
+		};
+	};
+};
+
+/ {
+	chosen {
+		zephyr,bt-hci = &siwx91x_bt;
 	};
 };

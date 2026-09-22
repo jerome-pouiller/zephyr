@@ -35,6 +35,10 @@
 	status = "disabled";
 };
 
+&bt_hci_silabs {
+	status = "disabled";
+};
+
 &eusart1 {
 	pinctrl-0 = <&eusart1_exp>;
 	cs-gpios = <&gpioc 8 GPIO_ACTIVE_HIGH>,
@@ -53,5 +57,15 @@
 		siwx91x_wifi: wifi {
 			compatible = "silabs,siwx91x-wifi";
 		};
+
+		siwx91x_bt: bt-hci {
+			compatible = "silabs,siwx91x-bt-hci";
+		};
+	};
+};
+
+/ {
+	chosen {
+		zephyr,bt-hci = &siwx91x_bt;
 	};
 };

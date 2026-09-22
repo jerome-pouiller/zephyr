@@ -1,0 +1,56 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2026 Silicon Laboratories Inc.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/*
+ * The SiWN917 NCP expansion board does not mate with the Arduino connector of
+ * the Nucleo, so it has to be wired manually. The SPI signals are taken from
+ * the Arduino connector, where SPI1 is already routed:
+ *
+ *   NCP EXP header         Nucleo Arduino header
+ *   ----------------------------------------------------
+ *   pin 1  (VMCU, 3V3)     3V3
+ *   pin 4  (COPI)          D11 (PB5)
+ *   pin 6  (CIPO)          D12 (PA6)
+ *   pin 8  (CLK)           D13 (PA5)
+ *   pin 10 (CS)            D10 (PD14)
+ *   pin 11 (RESET_N)       PB4
+ *   pin 13 (IRQ)           PA4
+ *   pin 19 (GND)           GND
+ *
+ * The Zio connectors also group their pins under silkscreen labels such as
+ * SPI_A and SPI_B. These labels do not tell which SPI controller they expose,
+ * so rely on the STM32 port names above, which the connectors carry as well.
+ *
+ * PB4 and PA4 are used for the out of band signals. They are not used by the
+ * board devicetree or the SPI1 pinmux.
+ */
+
+&spi1 {
+	status = "okay";
+
+	nwp: siwx91x-nwp@0 {
+		compatible = "silabs,siwx91x-nwp-spi";
+		reg = <0>;
+		spi-max-frequency = <DT_FREQ_M(10)>;
+		irq-gpios = <&gpioa 4 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpiob 4 GPIO_ACTIVE_LOW>;
+		antenna-selection = "internal";
+		clock-frequency = <DT_FREQ_M(80)>;
+
+		siwx91x_wifi: wifi {
+			compatible = "silabs,siwx91x-wifi";
+		};
+
+		siwx91x_bt: bt-hci {
+			compatible = "silabs,siwx91x-bt-hci";
+		};
+	};
+};
+
+/ {
+	chosen {
+		zephyr,bt-hci = &siwx91x_bt;
+	};
+};
