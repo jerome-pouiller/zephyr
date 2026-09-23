@@ -7,7 +7,6 @@ set(SISDK_DIR ${ZEPHYR_HAL_SILABS_MODULE_DIR}/simplicity_sdk)
 zephyr_include_directories(
   include
   ${ZEPHYR_BASE}/include/zephyr/portability
-  ${CPC_DIR}/config
   ${CPC_DIR}/inc
   ${CPC_DIR}/src
   ${SISDK_DIR}/platform/common/inc
@@ -17,6 +16,23 @@ zephyr_include_directories(
 zephyr_compile_definitions(
   SL_CATALOG_CPC_NG_PRESENT
   SL_CATALOG_CPC_NG_PRIMARY_PRESENT
+)
+
+# The CPC sources log through the silabs_cpc module, see include/sl_log_helper.h
+set_source_files_properties(
+  ${CPC_DIR}/src/sli_cpc.c
+  ${CPC_DIR}/src/sli_cpc_buf.c
+  ${CPC_DIR}/src/sli_cpc_bus.c
+  ${CPC_DIR}/src/sli_cpc_control.c
+  ${CPC_DIR}/src/sli_cpc_control_primary.c
+  ${CPC_DIR}/src/sli_cpc_crc.c
+  ${CPC_DIR}/src/sli_cpc_dispatcher.c
+  ${CPC_DIR}/src/sli_cpc_frame.c
+  ${CPC_DIR}/src/sli_cpc_memory.c
+  ${CPC_DIR}/src/sli_cpc_msgq.c
+  ${CPC_DIR}/src/sli_cpc_panic.c
+  TARGET_DIRECTORY zephyr
+  PROPERTIES COMPILE_DEFINITIONS SLI_CPC_LOG_MODULE
 )
 
 zephyr_library_sources(
@@ -31,6 +47,7 @@ zephyr_library_sources(
   ${CPC_DIR}/src/sli_cpc_memory.c
   ${CPC_DIR}/src/sli_cpc_msgq.c
   ${CPC_DIR}/src/sli_cpc_panic.c
+  src/sli_cpc_log.c
   src/sli_cpc_timer.c
 )
 

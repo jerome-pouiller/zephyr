@@ -19,4 +19,10 @@
 
 /* Map SLI_CPC_ASSERT() on __ASSERT(), see cpc_assert.h */
 #define SL_CATALOG_CPC_NG_PORT_ASSERT_PRESENT
+
+/* Route the CPC logs to the Zephyr logging subsystem, see sl_log_helper.h */
+#ifdef CONFIG_LOG
+#define SL_CATALOG_LOG_COMPONENT_PRESENT
+#endif
+
 #endif /* SL_COMPONENT_CATALOG_H */
