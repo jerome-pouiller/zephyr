@@ -25,5 +25,9 @@
 		ncp_hci: bt-hci {
 			compatible = "silabs,series3-hci";
 		};
+
+		ncp_wifi: wifi {
+			compatible = "silabs,series3-wifi";
+		};
 	};
 };
