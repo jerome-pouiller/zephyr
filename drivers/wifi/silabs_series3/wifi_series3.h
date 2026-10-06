@@ -40,6 +40,13 @@ struct wifi_series3_mgmt_rx_slot {
 	uint8_t data[WIFI_SERIES3_MGMT_MTU] __aligned(SL_CPC_BUF_MIN_ALIGNMENT);
 };
 
+/* Transmit context, alive until the CPC send-done event */
+struct wifi_series3_data_tx_slot {
+	sl_cpc_buf_t buf;
+	sl_cpc_frame_t frame;
+	uint8_t data[WIFI_SERIES3_DATA_MTU] __aligned(SL_CPC_BUF_MIN_ALIGNMENT);
+};
+
 /* State shared with the Zephyr supplicant */
 struct wifi_series3_supp {
 	struct zep_drv_if_ctx *if_ctx;
@@ -49,6 +56,7 @@ struct wifi_series3_supp {
 struct wifi_series3_config {
 	const struct device *parent;
 	struct net_eth_mac_config mac;
+	struct k_mem_slab *data_tx_slab;
 };
 
 struct wifi_series3_data {
