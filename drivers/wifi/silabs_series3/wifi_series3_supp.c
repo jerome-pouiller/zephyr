@@ -13,6 +13,7 @@
 #include <zephyr/net/net_if.h>
 
 #include "wifi_series3.h"
+#include "wifi_series3_sta.h"
 
 LOG_MODULE_DECLARE(wifi_series3, CONFIG_WIFI_LOG_LEVEL);
 
