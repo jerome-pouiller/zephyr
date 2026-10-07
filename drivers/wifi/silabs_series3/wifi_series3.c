@@ -380,7 +380,7 @@ static int wifi_series3_init(const struct device *dev)
 	k_work_init(&data->mgmt_rx_work, wifi_series3_mgmt_rx_work);
 	k_mutex_init(&data->cmd.lock);
 	k_sem_init(&data->cmd.done, 0, 1);
-	k_mutex_init(&data->sta.scan_lock);
+	k_mutex_init(&data->sta.lock);
 
 	if (!device_is_ready(cfg->parent)) {
 		LOG_ERR("%s: co-processor not ready", dev->name);
@@ -429,6 +429,13 @@ static const struct zep_wpa_supp_dev_ops wifi_series3_supp_ops = {
 	.scan2 = wifi_series3_sta_scan,
 	.scan_abort = wifi_series3_sta_scan_abort,
 	.get_scan_results2 = wifi_series3_sta_get_scan_results,
+	.associate = wifi_series3_sta_associate,
+	.deauthenticate = wifi_series3_sta_deauthenticate,
+	.set_key = wifi_series3_sta_set_key,
+	.set_supp_port = wifi_series3_sta_set_supp_port,
+	.tx_control_port = wifi_series3_sta_tx_control_port,
+	.signal_poll = wifi_series3_sta_signal_poll,
+	.get_conn_info = wifi_series3_sta_get_conn_info,
 };
 
 static const struct wifi_mgmt_ops wifi_series3_mgmt_ops = {
