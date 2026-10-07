@@ -53,4 +53,10 @@ int wifi_series3_sta_signal_poll(void *if_priv, struct wpa_signal_info *si, unsi
 
 int wifi_series3_sta_get_conn_info(void *if_priv, struct wpa_conn_info *info);
 
+int wifi_series3_sta_send_mlme(void *if_priv, const u8 *data, size_t data_len, int noack,
+			       unsigned int freq, int no_cck, int offchanok, unsigned int wait_time,
+			       int cookie);
+
+int wifi_series3_sta_send_external_auth_status(void *if_priv, struct external_auth *params);
+
 #endif /* ZEPHYR_DRIVERS_WIFI_SILABS_SERIES3_WIFI_SERIES3_STA_H_ */
