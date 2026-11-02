@@ -61,6 +61,19 @@ config MFD_SILABS_NCP_UART_RX_RING_BUF_SIZE
 	  them. It must hold what the co-processor can send while the
 	  transport is not running.
 
+config MFD_SILABS_NCP_UART_RX_TIMEOUT_US
+	int "UART reception timeout in microseconds"
+	depends on MFD_SILABS_NCP_BUS_UART
+	default 0
+	help
+	  Idle time on the line after which the UART reports what it received.
+	  With 0, drivers having an idle line interrupt report from the
+	  interrupt. Other values make many drivers report from the system
+	  work queue: the co-processor replies are then held while the system
+	  work queue is blocked, e.g. by bt_enable() with a callback. UARTs
+	  without an idle line interrupt, like the EUSART of the xG22, need a
+	  value other than 0.
+
 config MFD_SILABS_NCP_INIT_PRIORITY
 	int "Initialization priority"
 	default 86
@@ -69,6 +82,21 @@ config MFD_SILABS_NCP_INIT_PRIORITY
 	  priority of the bus they sit on (SPI_INIT_PRIORITY,
 	  SDHC_INIT_PRIORITY, SERIAL_INIT_PRIORITY) and lower than the priority of the child
 	  drivers that open CPC endpoints.
+
+config MFD_SILABS_NCP_WORKQ_STACK_SIZE
+	int "Stack size of the co-processor work queue"
+	default 1536
+	help
+	  The transports of all the silabs,ncp devices exchange data with the
+	  co-processors from this work queue.
+
+config MFD_SILABS_NCP_WORKQ_PRIORITY
+	int "Priority of the co-processor work queue"
+	default -2
+	help
+	  The work queue must be able to run while the users of the
+	  co-processor wait for a reply. The default cooperative priority
+	  runs it ahead of the system work queue and the application threads.
 
 config MFD_SILABS_NCP_RX_FRAME_POOL_COUNT
 	int "Number of RX frames of a CPC bus"

@@ -15,6 +15,7 @@
 
 #include <zephyr/device.h>
 #include <zephyr/drivers/mfd/silabs_ncp.h>
+#include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
 
@@ -57,6 +58,17 @@ static inline int mfd_silabs_ncp_bus_start(const struct device *dev, const sli_c
 	}
 
 	return 0;
+}
+
+/* Schedule the work of a transport on the co-processor work queue */
+static inline void mfd_silabs_ncp_reschedule(struct k_work_delayable *work, k_timeout_t delay)
+{
+	k_work_reschedule_for_queue(mfd_silabs_ncp_work_q(), work, delay);
+}
+
+static inline void mfd_silabs_ncp_schedule(struct k_work_delayable *work, k_timeout_t delay)
+{
+	k_work_schedule_for_queue(mfd_silabs_ncp_work_q(), work, delay);
 }
 
 /*

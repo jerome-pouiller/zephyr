@@ -17,7 +17,8 @@
  *    the advertised transfer length from the XFER_COUNT register and issues
  *    the CMD53 read.
  *
- * The transport runs from the system work queue: the SDIO API is blocking.
+ * The transport runs from the co-processor work queue: the SDIO API is
+ * blocking.
  */
 
 #define DT_DRV_COMPAT silabs_ncp
@@ -106,7 +107,7 @@ static inline struct ncp_sdio_data *ncp_sdio_data_from_bus(sl_cpc_bus_t *bus)
 
 static void ncp_sdio_wakeup(struct ncp_sdio_data *data)
 {
-	k_work_reschedule(&data->work, K_NO_WAIT);
+	mfd_silabs_ncp_reschedule(&data->work, K_NO_WAIT);
 }
 
 static void ncp_sdio_card_int(const struct device *sdhc, int reason, const void *user_data)
@@ -297,7 +298,7 @@ static bool ncp_sdio_tx(const struct device *dev)
 		key = irq_lock();
 		sli_cpc_frame_list_push_front(&data->tx_queue, frame);
 		irq_unlock(key);
-		k_work_reschedule(&data->work, NCP_SDIO_RETRY_DELAY);
+		mfd_silabs_ncp_reschedule(&data->work, NCP_SDIO_RETRY_DELAY);
 		return false;
 	}
 
@@ -328,7 +329,7 @@ static void ncp_sdio_work_handler(struct k_work *work)
 				ncp_sdio_enable_card_int(dev);
 			}
 		} else {
-			k_work_reschedule(&data->work, NCP_SDIO_RETRY_DELAY);
+			mfd_silabs_ncp_reschedule(&data->work, NCP_SDIO_RETRY_DELAY);
 		}
 	}
 
@@ -336,7 +337,7 @@ static void ncp_sdio_work_handler(struct k_work *work)
 	}
 
 	if (data->polling) {
-		k_work_schedule(&data->work, NCP_SDIO_POLL_INTERVAL);
+		mfd_silabs_ncp_schedule(&data->work, NCP_SDIO_POLL_INTERVAL);
 	}
 }
 
