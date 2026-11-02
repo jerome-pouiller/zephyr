@@ -51,6 +51,17 @@ static inline struct sl_cpc_bus *mfd_silabs_ncp_cpc_bus(const struct device *dev
 	return &data->cpc_bus;
 }
 
+/**
+ * @brief Get the work queue of the Silicon Labs network co-processors.
+ *
+ * The transports exchange data with the co-processors from this work queue.
+ * Child drivers may use it for work that must make progress while the system
+ * work queue is blocked.
+ *
+ * @return The work queue.
+ */
+struct k_work_q *mfd_silabs_ncp_work_q(void);
+
 /** @} */
 
 #ifdef __cplusplus

@@ -19,7 +19,7 @@
  *
  * While idle, the secondary asserts the IRQ line when it has a frame to send.
  *
- * The transport is a state machine run from the system work queue. It is
+ * The transport is a state machine run from the co-processor work queue. It is
  * woken up by the SPI completion callback, the IRQ line, the CPC core (frames
  * to send) and the RX frame pool (frames released).
  */
@@ -122,7 +122,7 @@ static inline struct ncp_spi_data *ncp_spi_data_from_bus(sl_cpc_bus_t *bus)
 
 static void ncp_spi_wakeup(struct ncp_spi_data *data)
 {
-	k_work_reschedule(&data->work, K_NO_WAIT);
+	mfd_silabs_ncp_reschedule(&data->work, K_NO_WAIT);
 }
 
 static void ncp_spi_irq_handler(const struct device *port, struct gpio_callback *cb,
@@ -236,7 +236,7 @@ static void ncp_spi_abort(const struct device *dev)
 	data->tx = NULL;
 	data->rx = NULL;
 	data->state = NCP_SPI_IDLE;
-	k_work_reschedule(&data->work, NCP_SPI_RETRY_DELAY);
+	mfd_silabs_ncp_reschedule(&data->work, NCP_SPI_RETRY_DELAY);
 }
 
 /* IDLE -> HEADER */
@@ -462,7 +462,7 @@ static void ncp_spi_work_handler(struct k_work *work)
 				LOG_WRN("%s: still waiting for the co-processor", dev->name);
 				data->irq_wait_start = k_uptime_get();
 			}
-			k_work_reschedule(&data->work, NCP_SPI_IRQ_TIMEOUT);
+			mfd_silabs_ncp_reschedule(&data->work, NCP_SPI_IRQ_TIMEOUT);
 			break;
 		}
 		ncp_spi_start_payload(dev);

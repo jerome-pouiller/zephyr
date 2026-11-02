@@ -216,7 +216,7 @@ static int hci_ncp_deliver(const struct device *dev, const uint8_t *payload, uin
 }
 
 /* Deliver the pending packets in order, until the host runs out of buffers.
- * Runs in the CPC context and on the system work queue.
+ * Runs in the CPC context and on the co-processor work queue.
  */
 static void hci_ncp_rx_process(const struct device *dev)
 {
@@ -268,7 +268,7 @@ static void hci_ncp_rx_freed(enum bt_buf_type type_mask)
 	if (dev) {
 		struct hci_ncp_data *data = dev->data;
 
-		k_work_submit(&data->rx_work);
+		k_work_submit_to_queue(mfd_silabs_ncp_work_q(), &data->rx_work);
 	}
 }
 

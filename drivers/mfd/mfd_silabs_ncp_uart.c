@@ -16,8 +16,8 @@
  *
  * The transport uses the asynchronous UART API. The UART callback empties the
  * DMA buffers into a ring buffer; the frames are parsed and sent from the
- * system work queue. The speed and the flow control of the link come from the
- * devicetree of the UART controller.
+ * co-processor work queue. The speed and the flow control of the link come
+ * from the devicetree of the UART controller.
  */
 
 #define DT_DRV_COMPAT silabs_ncp
@@ -45,8 +45,6 @@ LOG_MODULE_REGISTER(mfd_silabs_ncp_uart, CONFIG_MFD_LOG_LEVEL);
 #define NCP_UART_HDR_BLOCK_SIZE (1 + SLI_CPC_HEADER_SIZE + NCP_UART_CRC_SIZE)
 #define NCP_UART_MAX_FRAME                                                                         \
 	(NCP_UART_HDR_BLOCK_SIZE + SL_CPC_EP_MAX_PAYLOAD_SIZE + NCP_UART_CRC_SIZE)
-/* Idle time on the line after which the UART reports what it received */
-#define NCP_UART_RX_TIMEOUT_US  1000
 #define NCP_UART_RETRY_DELAY    K_MSEC(10)
 
 /* Events raised by the UART callback, handled by the work queue */
@@ -116,7 +114,7 @@ static inline struct ncp_uart_data *ncp_uart_data_from_bus(sl_cpc_bus_t *bus)
 
 static void ncp_uart_wakeup(struct ncp_uart_data *data)
 {
-	k_work_reschedule(&data->work, K_NO_WAIT);
+	mfd_silabs_ncp_reschedule(&data->work, K_NO_WAIT);
 }
 
 static void ncp_uart_callback(const struct device *uart, struct uart_event *evt, void *user_data)
@@ -177,7 +175,7 @@ static int ncp_uart_rx_enable(const struct device *dev)
 
 	atomic_set(&data->rx_bufs_used, BIT(0));
 	ret = uart_rx_enable(cfg->uart, cfg->rx_bufs[0], cfg->rx_buf_size,
-			     NCP_UART_RX_TIMEOUT_US);
+			     CONFIG_MFD_SILABS_NCP_UART_RX_TIMEOUT_US);
 	if (ret < 0) {
 		LOG_ERR("%s: cannot enable reception: %d", dev->name, ret);
 		atomic_clear(&data->rx_bufs_used);
@@ -458,7 +456,7 @@ static void ncp_uart_tx(const struct device *dev)
 		key = irq_lock();
 		sli_cpc_frame_list_push_front(&data->tx_queue, frame);
 		irq_unlock(key);
-		k_work_reschedule(&data->work, NCP_UART_RETRY_DELAY);
+		mfd_silabs_ncp_reschedule(&data->work, NCP_UART_RETRY_DELAY);
 	}
 }
 
@@ -473,7 +471,7 @@ static void ncp_uart_work_handler(struct k_work *work)
 		if (data->running) {
 			LOG_WRN("%s: reception stopped, restarting", dev->name);
 			if (ncp_uart_rx_enable(dev) < 0) {
-				k_work_reschedule(&data->work, NCP_UART_RETRY_DELAY);
+				mfd_silabs_ncp_reschedule(&data->work, NCP_UART_RETRY_DELAY);
 			}
 		}
 	}
