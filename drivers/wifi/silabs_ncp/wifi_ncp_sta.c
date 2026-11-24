@@ -877,7 +877,10 @@ int wifi_ncp_sta_set_key(void *if_priv, const unsigned char *ifname, enum wpa_al
 	/* The high nibble is the algorithm, aligned with enum wpa_alg */
 	keys.type = (alg << 4) | ((key_flag & KEY_FLAG_PAIRWISE) ? SLI_WIFI_KEY_TYPE_PTK
 								 : SLI_WIFI_KEY_TYPE_GTK);
-	keys.key_id = key_idx & 0x3;
+	/* The key is installed, not only stored, whatever set_tx says: the
+	 * group key of a station is installed too.
+	 */
+	keys.key_id = SLI_WIFI_INSTALL_KEY | (key_idx & 0x3);
 	memcpy(keys.key, key, key_len);
 	keys.key_len = key_len;
 	hdr.iface = SLI_WIFI_STA_MODE;
