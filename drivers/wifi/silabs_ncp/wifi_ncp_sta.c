@@ -295,6 +295,17 @@ static void wifi_ncp_tx_status(const struct device *dev, const uint8_t *hdr, con
 		hdr[15]);
 }
 
+/* The key installation is confirmed only when it fails */
+static void wifi_ncp_set_keys_failed(const struct device *dev, const uint8_t *hdr,
+				     const uint8_t *frame, size_t len)
+{
+	ARG_UNUSED(frame);
+	ARG_UNUSED(len);
+
+	LOG_ERR("%s: set key failed: 0x%04x", dev->name,
+		wifi_ncp_nwp_status((const struct wifi_ncp_nwp_hdr *)hdr));
+}
+
 static void wifi_ncp_card_ready(const struct device *dev, const uint8_t *hdr,
 				const uint8_t *frame, size_t len)
 {
@@ -334,6 +345,7 @@ static const struct {
 	{ SLI_WIFI_CMD_JOIN, wifi_ncp_join_status },
 	{ SLI_NWP_IND_ON_AIR_MGMT, wifi_ncp_auth_rx },
 	{ SLI_NWP_IND_TX_STATUS, wifi_ncp_tx_status },
+	{ SLI_MGMTIF_CMD_SET_KEYS, wifi_ncp_set_keys_failed },
 };
 
 void wifi_ncp_sta_rx(const struct device *dev, const uint8_t *frame, size_t len)
@@ -791,15 +803,12 @@ int wifi_ncp_sta_associate(void *if_priv, struct wpa_driver_associate_params *pa
 	sta->state = WIFI_NCP_STA_JOINING;
 	k_mutex_unlock(&sta->lock);
 
-	ret = wifi_ncp_nwp_cmd(dev, &load_hdr, &load, sizeof(load), NULL, 0, NULL, NULL);
+	ret = wifi_ncp_nwp_send(dev, &load_hdr, &load, sizeof(load), NULL, 0);
 	if (!ret) {
 		ret = wifi_ncp_nwp_send(dev, &join_hdr, &join, sizeof(join), ap_info,
 					sizeof(*ap_info));
-	} else if (ret > 0) {
-		LOG_ERR("%s: load IE failed: 0x%04x", dev->name, ret);
-		ret = -EIO;
 	}
-	if (ret < 0) {
+	if (ret) {
 		k_mutex_lock(&sta->lock, K_FOREVER);
 		sta->state = WIFI_NCP_STA_IDLE;
 		k_mutex_unlock(&sta->lock);
@@ -846,7 +855,6 @@ int wifi_ncp_sta_set_key(void *if_priv, const unsigned char *ifname, enum wpa_al
 	const struct device *dev = if_priv;
 	struct wifi_ncp_nwp_hdr hdr = {.command_id = SLI_MGMTIF_CMD_SET_KEYS};
 	sli_mgmtif_set_keys_t keys;
-	int ret;
 
 	ARG_UNUSED(ifname);
 	ARG_UNUSED(addr);
@@ -872,13 +880,8 @@ int wifi_ncp_sta_set_key(void *if_priv, const unsigned char *ifname, enum wpa_al
 	/* DW1.B3: station interface */
 	hdr.reserved2[WIFI_NCP_NWP_DESC_IFACE - 3] = SLI_WIFI_STA_MODE;
 
-	ret = wifi_ncp_nwp_cmd(dev, &hdr, &keys, sizeof(keys), NULL, 0, NULL, NULL);
-	if (ret > 0) {
-		LOG_ERR("%s: set key failed: 0x%04x", dev->name, ret);
-		return -EIO;
-	}
-
-	return ret;
+	/* The network processor answers only to report a failure */
+	return wifi_ncp_nwp_send(dev, &hdr, &keys, sizeof(keys), NULL, 0);
 }
 
 /* The supplicant opens the port once the key exchange is over */
@@ -899,8 +902,9 @@ int wifi_ncp_sta_set_supp_port(void *if_priv, int authorized, char *bssid)
 	return 0;
 }
 
-/* EAPOL frames go to the co-processor as 802.11 data frames. The
- * confirmation means the frame was acknowledged.
+/* EAPOL frames go to the co-processor as 802.11 data frames. Nothing
+ * confirms them, except the status of the last one of the handshake, reported
+ * as an indication.
  */
 int wifi_ncp_sta_tx_control_port(void *if_priv, const unsigned char *dest, unsigned short proto,
 				 const unsigned char *buf, size_t len, int no_encrypt)
@@ -914,7 +918,6 @@ int wifi_ncp_sta_tx_control_port(void *if_priv, const unsigned char *dest, unsig
 	uint8_t head[IEEE80211_HDRLEN + sizeof(llc_snap) + sizeof(uint16_t)];
 	struct ieee80211_hdr *mac = (struct ieee80211_hdr *)head;
 	uint8_t *llc = &head[IEEE80211_HDRLEN];
-	int ret;
 
 	ARG_UNUSED(no_encrypt);
 
@@ -931,13 +934,7 @@ int wifi_ncp_sta_tx_control_port(void *if_priv, const unsigned char *dest, unsig
 	memcpy(llc, llc_snap, sizeof(llc_snap));
 	sys_put_be16(proto, llc + sizeof(llc_snap));
 
-	ret = wifi_ncp_nwp_cmd(dev, &hdr, head, sizeof(head), buf, len, NULL, NULL);
-	if (ret > 0) {
-		LOG_ERR("%s: EAPOL transmission failed: 0x%04x", dev->name, ret);
-		return -EIO;
-	}
-
-	return ret;
+	return wifi_ncp_nwp_send(dev, &hdr, head, sizeof(head), buf, len);
 }
 
 /* The signal level is not reported by the co-processor */
@@ -1004,15 +1001,14 @@ int wifi_ncp_sta_send_mlme(void *if_priv, const u8 *data_buf, size_t data_len, i
 		return -ENOTSUP;
 	}
 
-	ret = wifi_ncp_nwp_cmd(dev, &tx_hdr, data_buf, data_len, NULL, 0, NULL, NULL);
+	ret = wifi_ncp_nwp_send(dev, &tx_hdr, data_buf, data_len, NULL, 0);
 	if (ret) {
 		LOG_ERR("%s: authentication frame transmission failed: %d", dev->name, ret);
 		return -EIO;
 	}
 
 	if (sys_le16_to_cpu(mgmt->u.auth.auth_transaction) == 1) {
-		ret = wifi_ncp_nwp_cmd(dev, &commit_hdr, &commit, sizeof(commit), NULL, 0, NULL,
-				       NULL);
+		ret = wifi_ncp_nwp_send(dev, &commit_hdr, &commit, sizeof(commit), NULL, 0);
 		if (ret) {
 			LOG_ERR("%s: SAE commit status failed: %d", dev->name, ret);
 			return -EIO;
@@ -1040,7 +1036,7 @@ int wifi_ncp_sta_send_external_auth_status(void *if_priv, struct external_auth *
 		return 0;
 	}
 
-	ret = wifi_ncp_nwp_cmd(dev, &hdr, NULL, 0, NULL, 0, NULL, NULL);
+	ret = wifi_ncp_nwp_send(dev, &hdr, NULL, 0, NULL, 0);
 	if (ret) {
 		LOG_ERR("%s: SAE confirm success failed: %d", dev->name, ret);
 		return -EIO;
