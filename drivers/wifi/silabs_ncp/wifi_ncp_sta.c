@@ -902,22 +902,18 @@ int wifi_ncp_sta_set_supp_port(void *if_priv, int authorized, char *bssid)
 	return 0;
 }
 
-/* EAPOL frames go to the co-processor as 802.11 data frames. Nothing
- * confirms them, except the status of the last one of the handshake, reported
- * as an indication.
+/* EAPOL frames go to the co-processor as Ethernet frames, on the management
+ * endpoint. Nothing confirms them, except the status of the last one of the
+ * handshake, reported as an indication.
  */
 int wifi_ncp_sta_tx_control_port(void *if_priv, const unsigned char *dest, unsigned short proto,
 				 const unsigned char *buf, size_t len, int no_encrypt)
 {
 	const struct device *dev = if_priv;
 	struct wifi_ncp_data *data = dev->data;
-	struct wifi_ncp_sta *sta = &data->sta;
-	struct wifi_ncp_nwp_hdr hdr = {.command_id = SLI_WIFI_TX_DOT11_MGMT_FRAME};
+	struct wifi_ncp_nwp_hdr hdr = { .command_id = SLI_WIFI_TX_DOT11_MGMT_FRAME };
 	struct net_linkaddr *own = net_if_get_link_addr(data->iface);
-	static const uint8_t llc_snap[] = { 0xaa, 0xaa, 0x03, 0x00, 0x00, 0x00 };
-	uint8_t head[IEEE80211_HDRLEN + sizeof(llc_snap) + sizeof(uint16_t)];
-	struct ieee80211_hdr *mac = (struct ieee80211_hdr *)head;
-	uint8_t *llc = &head[IEEE80211_HDRLEN];
+	struct net_eth_hdr eth;
 
 	ARG_UNUSED(no_encrypt);
 
@@ -925,16 +921,11 @@ int wifi_ncp_sta_tx_control_port(void *if_priv, const unsigned char *dest, unsig
 		return -EINVAL;
 	}
 
-	memset(head, 0, sizeof(head));
-	mac->frame_control =
-		sys_cpu_to_le16(IEEE80211_FC(WLAN_FC_TYPE_DATA, WLAN_FC_STYPE_DATA) | WLAN_FC_TODS);
-	memcpy(mac->addr1, sta->bssid, NET_ETH_ADDR_LEN);
-	memcpy(mac->addr2, own->addr, NET_ETH_ADDR_LEN);
-	memcpy(mac->addr3, dest, NET_ETH_ADDR_LEN);
-	memcpy(llc, llc_snap, sizeof(llc_snap));
-	sys_put_be16(proto, llc + sizeof(llc_snap));
+	memcpy(eth.dst.addr, dest, NET_ETH_ADDR_LEN);
+	memcpy(eth.src.addr, own->addr, NET_ETH_ADDR_LEN);
+	eth.type = sys_cpu_to_be16(proto);
 
-	return wifi_ncp_nwp_send(dev, &hdr, head, sizeof(head), buf, len);
+	return wifi_ncp_nwp_send(dev, &hdr, &eth, sizeof(eth), buf, len);
 }
 
 /* The signal level is not reported by the co-processor */
