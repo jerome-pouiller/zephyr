@@ -93,6 +93,7 @@ int wifi_ncp_nwp_send(const struct device *dev, const struct wifi_ncp_nwp_hdr *h
 	const struct wifi_ncp_config *cfg = dev->config;
 	struct wifi_ncp_data *data = dev->data;
 	struct wifi_ncp_mgmt_tx_slot *slot;
+	struct wifi_ncp_nwp_hdr *desc;
 	size_t len = sizeof(struct wifi_ncp_nwp_hdr) + head_len + body_len;
 	int status;
 	int ret;
@@ -107,7 +108,9 @@ int wifi_ncp_nwp_send(const struct device *dev, const struct wifi_ncp_nwp_hdr *h
 		return -ENOMEM;
 	}
 
-	memcpy(slot->data, hdr, sizeof(struct wifi_ncp_nwp_hdr));
+	desc = (struct wifi_ncp_nwp_hdr *)slot->data;
+	memcpy(desc, hdr, sizeof(*desc));
+	wifi_ncp_nwp_set_len(desc, head_len + body_len, WIFI_NCP_NWP_QUEUE_MGMT);
 	if (head_len > 0) {
 		memcpy(slot->data + sizeof(struct wifi_ncp_nwp_hdr), head, head_len);
 	}
@@ -309,6 +312,7 @@ static int wifi_ncp_send(const struct device *dev, struct net_pkt *pkt)
 	const struct wifi_ncp_config *cfg = dev->config;
 	struct wifi_ncp_data *data = dev->data;
 	struct wifi_ncp_data_tx_slot *slot;
+	struct wifi_ncp_nwp_hdr *desc;
 	size_t len = net_pkt_get_len(pkt);
 	int status;
 	int ret;
@@ -323,7 +327,9 @@ static int wifi_ncp_send(const struct device *dev, struct net_pkt *pkt)
 		return -ENOMEM;
 	}
 
-	memset(slot->data, 0, sizeof(struct wifi_ncp_nwp_hdr));
+	desc = (struct wifi_ncp_nwp_hdr *)slot->data;
+	memset(desc, 0, sizeof(*desc));
+	wifi_ncp_nwp_set_len(desc, len, WIFI_NCP_NWP_QUEUE_DATA);
 	net_pkt_cursor_init(pkt);
 	ret = net_pkt_read(pkt, slot->data + sizeof(struct wifi_ncp_nwp_hdr), len);
 	if (ret < 0) {

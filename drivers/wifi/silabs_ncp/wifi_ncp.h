@@ -35,6 +35,7 @@
  * descriptions of sli_nwp.h.
  */
 struct wifi_ncp_nwp_hdr {
+	/* Bits 0-11: bytes following the descriptor, bits 12-15: queue */
 	uint16_t len_queue;
 	uint8_t command_id;
 	uint8_t flags;
@@ -56,6 +57,16 @@ struct wifi_ncp_nwp_hdr {
 BUILD_ASSERT(sizeof(struct wifi_ncp_nwp_hdr) == 16);
 
 #define WIFI_NCP_NWP_CMD_DATA 0
+
+/* Queues of the network processor */
+#define WIFI_NCP_NWP_QUEUE_MGMT 4
+#define WIFI_NCP_NWP_QUEUE_DATA 5
+
+static inline void wifi_ncp_nwp_set_len(struct wifi_ncp_nwp_hdr *hdr, size_t len, uint8_t queue)
+{
+	__ASSERT_NO_MSG(len <= BIT_MASK(12));
+	hdr->len_queue = sys_cpu_to_le16(len | (queue << 12));
+}
 
 static inline uint16_t wifi_ncp_nwp_status(const struct wifi_ncp_nwp_hdr *hdr)
 {
