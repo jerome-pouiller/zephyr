@@ -173,6 +173,8 @@ struct wifi_ncp_data {
 	sl_cpc_ep_t data_ep;
 	sl_cpc_ep_t mgmt_ep;
 	struct k_sem connected;
+	/* Given by the ready indication of the network processor */
+	struct k_sem card_ready;
 	/* Management frames are handled out of the CPC context */
 	struct k_work_q wq;
 

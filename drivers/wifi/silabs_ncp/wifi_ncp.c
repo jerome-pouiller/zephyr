@@ -376,6 +376,7 @@ static int wifi_ncp_init(const struct device *dev)
 
 	data->dev = dev;
 	k_sem_init(&data->connected, 0, 2);
+	k_sem_init(&data->card_ready, 0, 1);
 	k_fifo_init(&data->mgmt_rx_pending);
 	k_work_init(&data->mgmt_rx_work, wifi_ncp_mgmt_rx_work);
 	k_mutex_init(&data->cmd.lock);

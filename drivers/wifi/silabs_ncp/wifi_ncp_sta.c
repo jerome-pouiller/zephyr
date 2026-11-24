@@ -20,6 +20,11 @@
 
 LOG_MODULE_DECLARE(wifi_ncp, CONFIG_WIFI_LOG_LEVEL);
 
+/* Time given to the co-processor to report it is ready, once the endpoints are
+ * connected
+ */
+#define WIFI_NCP_CARD_READY_TIMEOUT K_SECONDS(5)
+
 /* Fixed fields of a beacon or probe response after the MAC header */
 #define WIFI_NCP_BEACON_FIXED_LEN 12
 
@@ -77,7 +82,6 @@ static bool wifi_ncp_cmd_confirm(const struct device *dev, const struct wifi_ncp
 	struct wifi_ncp_cmd *cmd = &data->cmd;
 
 	if (!cmd->pending || cmd->id != hdr->command_id) {
-		LOG_ERR("%s: unexpected confirmation %02x", dev->name, hdr->command_id);
 		return false;
 	}
 
@@ -291,6 +295,19 @@ static void wifi_ncp_tx_status(const struct device *dev, const uint8_t *hdr, con
 		hdr[15]);
 }
 
+static void wifi_ncp_card_ready(const struct device *dev, const uint8_t *hdr,
+				const uint8_t *frame, size_t len)
+{
+	struct wifi_ncp_data *data = dev->data;
+
+	ARG_UNUSED(hdr);
+	ARG_UNUSED(frame);
+	ARG_UNUSED(len);
+
+	LOG_DBG("%s: network processor ready", dev->name);
+	k_sem_give(&data->card_ready);
+}
+
 /* Authentication frame of the SAE exchange, for the supplicant */
 static void wifi_ncp_auth_rx(const struct device *dev, const uint8_t *hdr, const uint8_t *frame,
 			     size_t len)
@@ -311,9 +328,12 @@ static const struct {
 	uint8_t id;
 	void (*fn)(const struct device *dev, const uint8_t *hdr, const uint8_t *frame, size_t len);
 } wifi_ncp_rx_handlers[] = {
-	{SLI_WIFI_IND_ON_AIR_MGMT, wifi_ncp_scan_add}, {SLI_WIFI_CMD_SCAN, wifi_ncp_scan_done},
-	{SLI_WIFI_CMD_JOIN, wifi_ncp_join_status},     {SLI_NWP_IND_ON_AIR_MGMT, wifi_ncp_auth_rx},
-	{SLI_NWP_IND_TX_STATUS, wifi_ncp_tx_status},
+	{ SLI_WIFI_IND_CARD_READY, wifi_ncp_card_ready },
+	{ SLI_WIFI_IND_ON_AIR_MGMT, wifi_ncp_scan_add },
+	{ SLI_WIFI_CMD_SCAN, wifi_ncp_scan_done },
+	{ SLI_WIFI_CMD_JOIN, wifi_ncp_join_status },
+	{ SLI_NWP_IND_ON_AIR_MGMT, wifi_ncp_auth_rx },
+	{ SLI_NWP_IND_TX_STATUS, wifi_ncp_tx_status },
 };
 
 void wifi_ncp_sta_rx(const struct device *dev, const uint8_t *frame, size_t len)
@@ -1029,32 +1049,81 @@ int wifi_ncp_sta_send_external_auth_status(void *if_priv, struct external_auth *
 	return 0;
 }
 
-/* The co-processor is reachable: initialize the station and learn its MAC
- * address.
+/* The co-processor is reachable: wait for the network processor to be ready,
+ * configure it as a station on the 2.4 GHz band and learn its MAC address.
+ * The sequence is the one of the WiseConnect host SDK. A failure reported by
+ * the network processor is logged and leaves the device usable, as the
+ * firmware is still evolving.
  */
 int wifi_ncp_sta_init(const struct device *dev)
 {
 	struct wifi_ncp_data *data = dev->data;
-	struct wifi_ncp_nwp_hdr hdr = {.command_id = SLI_WIFI_CMD_INIT};
-	uint8_t resp[2 * NET_ETH_ADDR_LEN];
-	size_t resp_size = sizeof(resp);
+	struct wifi_ncp_nwp_hdr hdr;
+	sl_wifi_system_boot_configuration_t boot = {
+		.vif_type = SLI_NWP_OP_STATION,
+		.feature_bit_map = SL_WIFI_FEAT_AGGREGATION,
+		.custom_feature_bit_map = SL_WIFI_SYSTEM_CUSTOM_FEAT_EXTENSION_VALID,
+		/* Required by the WPA3 modes */
+		.ext_custom_feature_bit_map = SL_WIFI_EXT_FEAT_IEEE_80211W,
+	};
+	/* The fields are reserved, or ignored in station mode */
+	sli_wifi_feature_frame_request_t features = { };
+	sl_wifi_band_mode_t band = SL_WIFI_BAND_MODE_2_4GHZ;
+	sli_wifi_set_region_request_t region = {
+		.set_region_code_from_user_cmd = SET_REGION_CODE_FROM_USER,
+		.region_code = SL_WIFI_DEFAULT_REGION,
+	};
+	/* One or two addresses, when the processor also runs an access point */
+	uint8_t mac[2 * NET_ETH_ADDR_LEN];
+	size_t mac_len = sizeof(mac);
+	uint8_t region_code;
+	size_t region_len = sizeof(region_code);
+	const struct {
+		uint8_t id;
+		const void *req;
+		size_t req_len;
+		void *resp;
+		size_t *resp_len;
+	} steps[] = {
+		{ SLI_WIFI_CMD_OPERMODE, &boot, sizeof(boot), NULL, NULL },
+		{ SLI_WIFI_COMMON_CMD_FEATURE_FRAME, &features, sizeof(features), NULL, NULL },
+		{ SLI_WIFI_CMD_BAND, &band, sizeof(band), NULL, NULL },
+		{ SLI_WIFI_CMD_INIT, NULL, 0, mac, &mac_len },
+		{ SLI_WIFI_CMD_SET_REGION, &region, sizeof(region), &region_code, &region_len },
+	};
 	int ret;
 
-	ret = wifi_ncp_nwp_cmd(dev, &hdr, NULL, 0, NULL, 0, resp, &resp_size);
-	if (ret < 0) {
-		return ret;
+	/* Whether the indication is sent again when only the host restarts is
+	 * not known: carry on without it.
+	 */
+	if (k_sem_take(&data->card_ready, WIFI_NCP_CARD_READY_TIMEOUT) != 0) {
+		LOG_WRN("%s: no ready indication from the network processor", dev->name);
 	}
-	if (ret) {
-		LOG_WRN("%s: init failed: 0x%04x", dev->name, ret);
-		return 0;
+
+	for (size_t i = 0; i < ARRAY_SIZE(steps); i++) {
+		memset(&hdr, 0, sizeof(hdr));
+		hdr.command_id = steps[i].id;
+		ret = wifi_ncp_nwp_cmd(dev, &hdr, steps[i].req, steps[i].req_len, NULL, 0,
+				       steps[i].resp, steps[i].resp_len);
+		if (ret < 0) {
+			return ret;
+		}
+		if (ret > 0) {
+			LOG_WRN("%s: command 0x%02x failed: 0x%04x", dev->name, steps[i].id, ret);
+			return 0;
+		}
 	}
-	if (resp_size < NET_ETH_ADDR_LEN) {
+
+	if (mac_len < NET_ETH_ADDR_LEN) {
 		LOG_WRN("%s: init returned no MAC address", dev->name);
-		return 0;
+	} else {
+		memcpy(data->mac, mac, NET_ETH_ADDR_LEN);
+		LOG_INF("%s: MAC %02x:%02x:%02x:%02x:%02x:%02x", dev->name, data->mac[0],
+			data->mac[1], data->mac[2], data->mac[3], data->mac[4], data->mac[5]);
 	}
-	memcpy(data->mac, resp, NET_ETH_ADDR_LEN);
-	LOG_INF("%s: MAC %02x:%02x:%02x:%02x:%02x:%02x", dev->name, data->mac[0], data->mac[1],
-		data->mac[2], data->mac[3], data->mac[4], data->mac[5]);
+	if (region_len == sizeof(region_code)) {
+		LOG_DBG("%s: region %u", dev->name, region_code);
+	}
 
 	return 0;
 }
