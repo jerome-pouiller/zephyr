@@ -15,6 +15,7 @@
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/wifi.h>
 #include <zephyr/net/wifi_mgmt.h>
+#include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/util.h>
 
 #include <drivers/driver_zephyr.h>
@@ -30,31 +31,35 @@
 
 /* Every frame exchanged with the network processor, on both endpoints,
  * starts with this descriptor. On the data endpoint the only command is
- * "data", 0, and the descriptor is all zeros.
+ * "data", 0. The positions follow the SiWx91x host driver and the
+ * descriptions of sli_nwp.h.
  */
 struct wifi_ncp_nwp_hdr {
-	uint8_t reserved1[2];
+	uint16_t len_queue;
 	uint8_t command_id;
-	uint8_t reserved2[13];
+	uint8_t flags;
+	/* Bytes between the descriptor and the payload */
+	uint8_t ext_desc_size;
+	uint8_t reserved1[2];
+	/* DW1.B3: SLI_WIFI_STA_MODE or SLI_WIFI_AP_MODE */
+	uint8_t iface;
+	/* DW2.B0, received frames */
+	uint8_t channel;
+	uint8_t reserved2[3];
+	/* DW3.B0-B1: status of a confirmation, token of a TX status */
+	uint16_t status;
+	uint8_t reserved3;
+	/* DW3.B3: subtype of a TX status */
+	uint8_t sta_id;
 } __packed;
+
+BUILD_ASSERT(sizeof(struct wifi_ncp_nwp_hdr) == 16);
 
 #define WIFI_NCP_NWP_CMD_DATA 0
 
-/* Bytes of the descriptor used beyond the command identifier. The status
- * of a confirmation sits at the same place as in the SiWx91x host driver;
- * the others follow the descriptions of sli_nwp.h (DW1.B3 = byte 7,
- * DW2.B0 = byte 8).
- */
-#define WIFI_NCP_NWP_DESC_EXT_SIZE 4
-#define WIFI_NCP_NWP_DESC_IFACE    7
-#define WIFI_NCP_NWP_DESC_CHANNEL  8
-#define WIFI_NCP_NWP_DESC_STATUS   12
-
 static inline uint16_t wifi_ncp_nwp_status(const struct wifi_ncp_nwp_hdr *hdr)
 {
-	const uint8_t *desc = (const uint8_t *)hdr;
-
-	return desc[WIFI_NCP_NWP_DESC_STATUS] | (desc[WIFI_NCP_NWP_DESC_STATUS + 1] << 8);
+	return sys_le16_to_cpu(hdr->status);
 }
 
 /* Largest Ethernet frame with its descriptor, as a CPC payload */

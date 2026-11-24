@@ -97,8 +97,8 @@ static bool wifi_ncp_cmd_confirm(const struct device *dev, const struct wifi_ncp
 /* Keep a beacon or probe response for the supplicant. The information
  * elements are truncated to whole elements when they do not fit.
  */
-static void wifi_ncp_scan_add(const struct device *dev, const uint8_t *hdr, const uint8_t *frame,
-			      size_t len)
+static void wifi_ncp_scan_add(const struct device *dev, const struct wifi_ncp_nwp_hdr *hdr,
+			      const uint8_t *frame, size_t len)
 {
 	struct wifi_ncp_data *data = dev->data;
 	struct wifi_ncp_sta *sta = &data->sta;
@@ -107,7 +107,7 @@ static void wifi_ncp_scan_add(const struct device *dev, const uint8_t *hdr, cons
 	const uint8_t *ie;
 	size_t ie_len, kept = 0;
 	uint16_t fc, stype;
-	uint8_t channel = hdr[WIFI_NCP_NWP_DESC_CHANNEL];
+	uint8_t channel = hdr->channel;
 
 	if (len < IEEE80211_HDRLEN + WIFI_NCP_BEACON_FIXED_LEN) {
 		return;
@@ -151,14 +151,14 @@ static void wifi_ncp_scan_add(const struct device *dev, const uint8_t *hdr, cons
 	k_mutex_unlock(&sta->lock);
 }
 
-static void wifi_ncp_scan_done(const struct device *dev, const uint8_t *hdr, const uint8_t *frame,
-			       size_t len)
+static void wifi_ncp_scan_done(const struct device *dev, const struct wifi_ncp_nwp_hdr *hdr,
+			       const uint8_t *frame, size_t len)
 {
 	struct wifi_ncp_data *data = dev->data;
 	struct wifi_ncp_sta *sta = &data->sta;
 	union wpa_event_data event;
 	scan_result_cb_t cb;
-	uint16_t status = wifi_ncp_nwp_status((const struct wifi_ncp_nwp_hdr *)hdr);
+	uint16_t status = wifi_ncp_nwp_status(hdr);
 
 	ARG_UNUSED(frame);
 	ARG_UNUSED(len);
@@ -219,7 +219,7 @@ static void wifi_ncp_disconnected(const struct device *dev, uint16_t status, con
  * supplicant, which then runs the key exchange. Once associated, the same
  * frame reports the loss of the connection.
  */
-static void wifi_ncp_join_status(const struct device *dev, const uint8_t *hdr,
+static void wifi_ncp_join_status(const struct device *dev, const struct wifi_ncp_nwp_hdr *hdr,
 				 const uint8_t *payload, size_t len)
 {
 	struct wifi_ncp_data *data = dev->data;
@@ -227,7 +227,7 @@ static void wifi_ncp_join_status(const struct device *dev, const uint8_t *hdr,
 	union wpa_event_data event;
 	enum wifi_ncp_sta_state state;
 	enum wifi_frequency_bands band = wifi_utils_chan_to_band(sta->channel);
-	uint16_t status = wifi_ncp_nwp_status((const struct wifi_ncp_nwp_hdr *)hdr);
+	uint16_t status = wifi_ncp_nwp_status(hdr);
 
 	k_mutex_lock(&sta->lock, K_FOREVER);
 	state = sta->state;
@@ -284,29 +284,29 @@ static void wifi_ncp_join_status(const struct device *dev, const uint8_t *hdr,
 	}
 }
 
-/* The layout of DW3 is not known yet, trace it */
-static void wifi_ncp_tx_status(const struct device *dev, const uint8_t *hdr, const uint8_t *frame,
-			       size_t len)
+/* Only the last EAPOL frame of the handshake is reported, not used yet */
+static void wifi_ncp_tx_status(const struct device *dev, const struct wifi_ncp_nwp_hdr *hdr,
+			       const uint8_t *frame, size_t len)
 {
 	ARG_UNUSED(frame);
 	ARG_UNUSED(len);
 
-	LOG_INF("%s: TX status: %02x %02x %02x %02x", dev->name, hdr[12], hdr[13], hdr[14],
-		hdr[15]);
+	LOG_INF("%s: TX status: subtype 0x%02x, token 0x%04x", dev->name, hdr->sta_id,
+		wifi_ncp_nwp_status(hdr));
 }
 
 /* The key installation is confirmed only when it fails */
-static void wifi_ncp_set_keys_failed(const struct device *dev, const uint8_t *hdr,
+static void wifi_ncp_set_keys_failed(const struct device *dev, const struct wifi_ncp_nwp_hdr *hdr,
 				     const uint8_t *frame, size_t len)
 {
 	ARG_UNUSED(frame);
 	ARG_UNUSED(len);
 
 	LOG_ERR("%s: set key failed: 0x%04x", dev->name,
-		wifi_ncp_nwp_status((const struct wifi_ncp_nwp_hdr *)hdr));
+		wifi_ncp_nwp_status(hdr));
 }
 
-static void wifi_ncp_card_ready(const struct device *dev, const uint8_t *hdr,
+static void wifi_ncp_card_ready(const struct device *dev, const struct wifi_ncp_nwp_hdr *hdr,
 				const uint8_t *frame, size_t len)
 {
 	struct wifi_ncp_data *data = dev->data;
@@ -320,8 +320,8 @@ static void wifi_ncp_card_ready(const struct device *dev, const uint8_t *hdr,
 }
 
 /* Authentication frame of the SAE exchange, for the supplicant */
-static void wifi_ncp_auth_rx(const struct device *dev, const uint8_t *hdr, const uint8_t *frame,
-			     size_t len)
+static void wifi_ncp_auth_rx(const struct device *dev, const struct wifi_ncp_nwp_hdr *hdr,
+			     const uint8_t *frame, size_t len)
 {
 	struct wifi_ncp_data *data = dev->data;
 	enum wifi_frequency_bands band = wifi_utils_chan_to_band(data->sta.channel);
@@ -337,7 +337,8 @@ static void wifi_ncp_auth_rx(const struct device *dev, const uint8_t *hdr, const
 /* Confirmations of the deferred commands and indications */
 static const struct {
 	uint8_t id;
-	void (*fn)(const struct device *dev, const uint8_t *hdr, const uint8_t *frame, size_t len);
+	void (*fn)(const struct device *dev, const struct wifi_ncp_nwp_hdr *hdr,
+		   const uint8_t *frame, size_t len);
 } wifi_ncp_rx_handlers[] = {
 	{ SLI_WIFI_IND_CARD_READY, wifi_ncp_card_ready },
 	{ SLI_WIFI_IND_ON_AIR_MGMT, wifi_ncp_scan_add },
@@ -361,9 +362,9 @@ void wifi_ncp_sta_rx(const struct device *dev, const uint8_t *frame, size_t len)
 	/* No extended descriptor is expected between the descriptor and the
 	 * payload
 	 */
-	if (frame[WIFI_NCP_NWP_DESC_EXT_SIZE]) {
+	if (hdr->ext_desc_size) {
 		LOG_WRN("%s: frame 0x%02x with an extended descriptor of %u bytes", dev->name,
-			hdr->command_id, frame[WIFI_NCP_NWP_DESC_EXT_SIZE]);
+			hdr->command_id, hdr->ext_desc_size);
 	}
 
 	if (wifi_ncp_cmd_confirm(dev, hdr, payload, payload_len)) {
@@ -372,7 +373,7 @@ void wifi_ncp_sta_rx(const struct device *dev, const uint8_t *frame, size_t len)
 
 	for (size_t i = 0; i < ARRAY_SIZE(wifi_ncp_rx_handlers); i++) {
 		if (wifi_ncp_rx_handlers[i].id == hdr->command_id) {
-			wifi_ncp_rx_handlers[i].fn(dev, frame, payload, payload_len);
+			wifi_ncp_rx_handlers[i].fn(dev, hdr, payload, payload_len);
 			return;
 		}
 	}
@@ -877,8 +878,7 @@ int wifi_ncp_sta_set_key(void *if_priv, const unsigned char *ifname, enum wpa_al
 	keys.key_id = key_idx & 0x3;
 	memcpy(keys.key, key, key_len);
 	keys.key_len = key_len;
-	/* DW1.B3: station interface */
-	hdr.reserved2[WIFI_NCP_NWP_DESC_IFACE - 3] = SLI_WIFI_STA_MODE;
+	hdr.iface = SLI_WIFI_STA_MODE;
 
 	/* The network processor answers only to report a failure */
 	return wifi_ncp_nwp_send(dev, &hdr, &keys, sizeof(keys), NULL, 0);
