@@ -1074,11 +1074,11 @@ int wifi_ncp_sta_send_external_auth_status(void *if_priv, struct external_auth *
 	return 0;
 }
 
-/* The co-processor is reachable: wait for the network processor to be ready,
- * configure it as a station on the 2.4 GHz band and learn its MAC address.
- * The sequence is the one of the WiseConnect host SDK. A failure reported by
- * the network processor is logged and leaves the device usable, as the
- * firmware is still evolving.
+/* The co-processor is reachable: start the network processor, wait for it to
+ * be ready, configure it as a station on the 2.4 GHz band and learn its MAC
+ * address. The sequence is the one of the WiseConnect host SDK. A failure
+ * reported by the network processor is logged and leaves the device usable,
+ * as the firmware is still evolving.
  */
 int wifi_ncp_sta_init(const struct device *dev)
 {
@@ -1118,9 +1118,13 @@ int wifi_ncp_sta_init(const struct device *dev)
 	};
 	int ret;
 
-	/* Whether the indication is sent again when only the host restarts is
-	 * not known: carry on without it.
-	 */
+	/* The ready indication answers this frame */
+	memset(&hdr, 0, sizeof(hdr));
+	hdr.command_id = SLI_WIFI_CMD_NWP_INIT;
+	ret = wifi_ncp_nwp_send(dev, &hdr, NULL, 0, NULL, 0);
+	if (ret) {
+		return ret;
+	}
 	if (k_sem_take(&data->card_ready, WIFI_NCP_CARD_READY_TIMEOUT) != 0) {
 		LOG_WRN("%s: no ready indication from the network processor", dev->name);
 	}
