@@ -114,6 +114,25 @@ static int ncp_sdio_enable_card_int(const struct device *dev)
 	return sdhc_enable_interrupt(cfg->sdhc, ncp_sdio_card_int, SDHC_INT_SDIO, (void *)dev);
 }
 
+/* The co-processor does not answer the bus any more. An SDIO card gives no
+ * sign of life before a new enumeration: stop the transport, hand the frames
+ * it holds back to the core and stop the bus, which terminates the endpoints
+ * and reports the error to their users.
+ */
+static void ncp_sdio_dead(const struct device *dev, const char *what, int err)
+{
+	struct ncp_sdio_data *data = dev->data;
+	unsigned int key;
+
+	LOG_ERR("%s: %s failed: %d, giving the co-processor up", dev->name, what, err);
+	data->xport.running = false;
+	key = irq_lock();
+	sli_cpc_frame_list_extend(&data->xport.tx_done, &data->xport.tx_queue);
+	irq_unlock(key);
+	sli_cpc_bus_notify_tx_data_by_drv(&data->xport.common.cpc_bus, &data->xport.tx_done);
+	sl_cpc_bus_stop(&data->xport.common.cpc_bus);
+}
+
 /* Parse the bounce buffer of a CMD53 read and hand the frame to the core */
 static void ncp_sdio_rx_parse(const struct device *dev, size_t xfer_len)
 {
@@ -200,7 +219,7 @@ static bool ncp_sdio_rx(const struct device *dev)
 
 	ret = sdio_read_byte(&data->func1, NCP_SDIO_FN1_INT_ID, &int_id);
 	if (ret < 0) {
-		LOG_ERR("%s: INT_ID read failed: %d", dev->name, ret);
+		ncp_sdio_dead(dev, "INT_ID read", ret);
 		return false;
 	}
 	if (!(int_id & NCP_SDIO_INT_DATA_READY)) {
@@ -211,13 +230,13 @@ static bool ncp_sdio_rx(const struct device *dev)
 	}
 	ret = sdio_write_byte(&data->func1, NCP_SDIO_FN1_INT_ID, int_id);
 	if (ret < 0) {
-		LOG_ERR("%s: INT_ID write failed: %d", dev->name, ret);
+		ncp_sdio_dead(dev, "INT_ID write", ret);
 		return false;
 	}
 
 	ret = sdio_read_addr(&data->func1, NCP_SDIO_FN1_XFER_COUNT, len_le, sizeof(len_le));
 	if (ret < 0) {
-		LOG_ERR("%s: XFER_COUNT read failed: %d", dev->name, ret);
+		ncp_sdio_dead(dev, "XFER_COUNT read", ret);
 		return false;
 	}
 	xfer_len = sys_get_le32(len_le);
@@ -233,7 +252,7 @@ static bool ncp_sdio_rx(const struct device *dev)
 
 	ret = sdio_read_blocks_fifo(&data->func1, 0, data->rx_buf, xfer_len / NCP_SDIO_BLOCK_SIZE);
 	if (ret < 0) {
-		LOG_ERR("%s: CMD53 read failed: %d", dev->name, ret);
+		ncp_sdio_dead(dev, "CMD53 read", ret);
 		return false;
 	}
 	LOG_HEXDUMP_DBG(data->rx_buf, xfer_len, "rx");
@@ -278,11 +297,10 @@ static bool ncp_sdio_tx(const struct device *dev)
 	LOG_HEXDUMP_DBG(data->tx_buf, xfer_len, "tx");
 	ret = sdio_write_blocks_fifo(&data->func1, 0, data->tx_buf, xfer_len / NCP_SDIO_BLOCK_SIZE);
 	if (ret < 0) {
-		LOG_ERR("%s: CMD53 write failed: %d", dev->name, ret);
 		key = irq_lock();
 		sli_cpc_frame_list_push_front(&data->xport.tx_queue, frame);
 		irq_unlock(key);
-		mfd_silabs_ncp_reschedule(&data->xport, NCP_SDIO_RETRY_DELAY);
+		ncp_sdio_dead(dev, "CMD53 write", ret);
 		return false;
 	}
 
@@ -312,15 +330,15 @@ static void ncp_sdio_work_handler(struct k_work *work)
 				/* Re-arm: a still asserted line raises a new event */
 				ncp_sdio_enable_card_int(dev);
 			}
-		} else {
+		} else if (data->xport.running) {
 			mfd_silabs_ncp_reschedule(&data->xport, NCP_SDIO_RETRY_DELAY);
 		}
 	}
 
-	while (ncp_sdio_tx(dev)) {
+	while (data->xport.running && ncp_sdio_tx(dev)) {
 	}
 
-	if (data->polling) {
+	if (data->polling && data->xport.running) {
 		mfd_silabs_ncp_schedule(&data->xport, NCP_SDIO_POLL_INTERVAL);
 	}
 }
@@ -508,6 +526,9 @@ static uint32_t ncp_sdio_drv_get_available_write_frame_slots(sl_cpc_bus_t *bus)
 	uint32_t used;
 	unsigned int key;
 
+	if (!data->xport.running) {
+		return 0;
+	}
 	key = irq_lock();
 	used = sli_cpc_frame_list_get_len(&data->xport.tx_queue);
 	irq_unlock(key);
