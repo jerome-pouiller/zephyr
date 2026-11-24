@@ -167,15 +167,18 @@ static void wifi_ncp_data_recv(const struct device *dev, const sl_cpc_buf_t *buf
 {
 	struct wifi_ncp_data *data = dev->data;
 	const struct wifi_ncp_nwp_hdr *hdr = buf->ptr;
+	const uint8_t *frame;
 	size_t len;
 	struct net_pkt *pkt;
 
-	if (buf->len < sizeof(struct wifi_ncp_nwp_hdr) ||
-	    hdr->command_id != WIFI_NCP_NWP_CMD_DATA) {
+	if (buf->len < sizeof(*hdr) || hdr->command_id != WIFI_NCP_NWP_CMD_DATA ||
+	    buf->len < sizeof(*hdr) + hdr->ext_desc_size) {
 		LOG_WRN("%s: unexpected data frame (%u bytes), dropping", dev->name, buf->len);
 		return;
 	}
-	len = buf->len - sizeof(struct wifi_ncp_nwp_hdr);
+	/* The extended descriptor is not used */
+	frame = (const uint8_t *)(hdr + 1) + hdr->ext_desc_size;
+	len = buf->len - sizeof(*hdr) - hdr->ext_desc_size;
 
 	pkt = net_pkt_rx_alloc_with_buffer(data->iface, len, AF_UNSPEC, 0, K_NO_WAIT);
 	if (!pkt) {
@@ -183,7 +186,7 @@ static void wifi_ncp_data_recv(const struct device *dev, const sl_cpc_buf_t *buf
 		return;
 	}
 
-	if (net_pkt_write(pkt, hdr + 1, len) < 0) {
+	if (net_pkt_write(pkt, frame, len) < 0) {
 		LOG_ERR("%s: packet write failed", dev->name);
 		net_pkt_unref(pkt);
 		return;

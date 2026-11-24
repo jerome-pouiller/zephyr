@@ -358,20 +358,16 @@ static const struct {
 void wifi_ncp_sta_rx(const struct device *dev, const uint8_t *frame, size_t len)
 {
 	const struct wifi_ncp_nwp_hdr *hdr = (const struct wifi_ncp_nwp_hdr *)frame;
-	const uint8_t *payload = frame + sizeof(struct wifi_ncp_nwp_hdr);
-	size_t payload_len = len - sizeof(struct wifi_ncp_nwp_hdr);
+	const uint8_t *payload;
+	size_t payload_len;
 
-	if (len < sizeof(struct wifi_ncp_nwp_hdr)) {
+	if (len < sizeof(*hdr) || len < sizeof(*hdr) + hdr->ext_desc_size) {
 		LOG_WRN("%s: short management frame (%u bytes)", dev->name, len);
 		return;
 	}
-	/* No extended descriptor is expected between the descriptor and the
-	 * payload
-	 */
-	if (hdr->ext_desc_size) {
-		LOG_WRN("%s: frame 0x%02x with an extended descriptor of %u bytes", dev->name,
-			hdr->command_id, hdr->ext_desc_size);
-	}
+	/* The extended descriptor is not used */
+	payload = frame + sizeof(*hdr) + hdr->ext_desc_size;
+	payload_len = len - sizeof(*hdr) - hdr->ext_desc_size;
 
 	if (wifi_ncp_cmd_confirm(dev, hdr, payload, payload_len)) {
 		return;
