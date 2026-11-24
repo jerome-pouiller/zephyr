@@ -58,6 +58,9 @@ BUILD_ASSERT(sizeof(struct wifi_ncp_nwp_hdr) == 16);
 
 #define WIFI_NCP_NWP_CMD_DATA 0
 
+/* Flag of a sent frame: report its transmission with a TX status */
+#define WIFI_NCP_NWP_FLAG_CONFIRM BIT(2)
+
 /* Queues of the network processor */
 #define WIFI_NCP_NWP_QUEUE_MGMT 4
 #define WIFI_NCP_NWP_QUEUE_DATA 5

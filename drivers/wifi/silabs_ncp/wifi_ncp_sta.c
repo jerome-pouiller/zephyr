@@ -18,12 +18,18 @@
 #include "wifi_ncp.h"
 #include "wifi_ncp_sta.h"
 
+/* After wifi_ncp.h, which brings the types of the supplicant */
+#include <common/eapol_common.h>
+
 LOG_MODULE_DECLARE(wifi_ncp, CONFIG_WIFI_LOG_LEVEL);
 
 /* Time given to the co-processor to report it is ready, once the endpoints are
  * connected
  */
 #define WIFI_NCP_CARD_READY_TIMEOUT K_SECONDS(5)
+
+/* Echoed by the TX status of the last EAPOL frame */
+#define WIFI_NCP_EAPOL_TOKEN 1
 
 /* Fixed fields of a beacon or probe response after the MAC header */
 #define WIFI_NCP_BEACON_FIXED_LEN 12
@@ -902,9 +908,30 @@ int wifi_ncp_sta_set_supp_port(void *if_priv, int authorized, char *bssid)
 	return 0;
 }
 
+/* The last EAPOL-Key frame of a handshake carries a MIC and the Secure bit
+ * without requesting an acknowledgment: message 4 of the 4-way handshake,
+ * message 2 of the group key handshake.
+ */
+static bool wifi_ncp_eapol_is_last(unsigned short proto, const uint8_t *buf, size_t len)
+{
+	const struct ieee802_1x_hdr *hdr = (const struct ieee802_1x_hdr *)buf;
+	const struct wpa_eapol_key *key = (const struct wpa_eapol_key *)(hdr + 1);
+	uint16_t key_info;
+
+	if (proto != ETH_P_EAPOL || len < sizeof(*hdr) + sizeof(*key) ||
+	    hdr->type != IEEE802_1X_TYPE_EAPOL_KEY) {
+		return false;
+	}
+	key_info = WPA_GET_BE16(key->key_info);
+
+	return (key_info & (WPA_KEY_INFO_MIC | WPA_KEY_INFO_SECURE | WPA_KEY_INFO_ACK)) ==
+	       (WPA_KEY_INFO_MIC | WPA_KEY_INFO_SECURE);
+}
+
 /* EAPOL frames go to the co-processor as Ethernet frames, on the management
- * endpoint. Nothing confirms them, except the status of the last one of the
- * handshake, reported as an indication.
+ * endpoint. Nothing confirms them, except the last one of a handshake: its
+ * transmission is reported by a TX status, asked for with a flag and a token
+ * in the extended descriptor.
  */
 int wifi_ncp_sta_tx_control_port(void *if_priv, const unsigned char *dest, unsigned short proto,
 				 const unsigned char *buf, size_t len, int no_encrypt)
@@ -913,7 +940,12 @@ int wifi_ncp_sta_tx_control_port(void *if_priv, const unsigned char *dest, unsig
 	struct wifi_ncp_data *data = dev->data;
 	struct wifi_ncp_nwp_hdr hdr = { .command_id = SLI_WIFI_TX_DOT11_MGMT_FRAME };
 	struct net_linkaddr *own = net_if_get_link_addr(data->iface);
-	struct net_eth_hdr eth;
+	struct {
+		uint32_t token;
+		struct net_eth_hdr eth;
+	} __packed head;
+	const void *head_ptr = &head.eth;
+	size_t head_len = sizeof(head.eth);
 
 	ARG_UNUSED(no_encrypt);
 
@@ -921,11 +953,18 @@ int wifi_ncp_sta_tx_control_port(void *if_priv, const unsigned char *dest, unsig
 		return -EINVAL;
 	}
 
-	memcpy(eth.dst.addr, dest, NET_ETH_ADDR_LEN);
-	memcpy(eth.src.addr, own->addr, NET_ETH_ADDR_LEN);
-	eth.type = sys_cpu_to_be16(proto);
+	memcpy(head.eth.dst.addr, dest, NET_ETH_ADDR_LEN);
+	memcpy(head.eth.src.addr, own->addr, NET_ETH_ADDR_LEN);
+	head.eth.type = sys_cpu_to_be16(proto);
+	if (wifi_ncp_eapol_is_last(proto, buf, len)) {
+		hdr.flags |= WIFI_NCP_NWP_FLAG_CONFIRM;
+		hdr.ext_desc_size = sizeof(head.token);
+		head.token = sys_cpu_to_le32(WIFI_NCP_EAPOL_TOKEN);
+		head_ptr = &head;
+		head_len = sizeof(head);
+	}
 
-	return wifi_ncp_nwp_send(dev, &hdr, &eth, sizeof(eth), buf, len);
+	return wifi_ncp_nwp_send(dev, &hdr, head_ptr, head_len, buf, len);
 }
 
 /* The signal level is not reported by the co-processor */
