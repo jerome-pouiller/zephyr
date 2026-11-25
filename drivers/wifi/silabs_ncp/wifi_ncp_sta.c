@@ -144,7 +144,7 @@ static void wifi_ncp_scan_add(const struct device *dev, const struct wifi_ncp_nw
 		}
 	}
 	if (!entry) {
-		LOG_WRN("%s: scan results full, dropping a BSS", dev->name);
+		sta->scan_dropped++;
 	} else {
 		entry->used = true;
 		memcpy(entry->bssid, mgmt->bssid, NET_ETH_ADDR_LEN);
@@ -165,6 +165,7 @@ static void wifi_ncp_scan_done(const struct device *dev, const struct wifi_ncp_n
 	union wpa_event_data event;
 	scan_result_cb_t cb;
 	uint16_t status = wifi_ncp_nwp_status(hdr);
+	unsigned int dropped;
 
 	ARG_UNUSED(frame);
 	ARG_UNUSED(len);
@@ -178,9 +179,14 @@ static void wifi_ncp_scan_done(const struct device *dev, const struct wifi_ncp_n
 	sta->scanning = false;
 	cb = sta->scan_cb;
 	sta->scan_cb = NULL;
+	dropped = sta->scan_dropped;
 	k_mutex_unlock(&sta->lock);
 
 	LOG_DBG("%s: scan done: 0x%04x", dev->name, status);
+	if (dropped) {
+		LOG_WRN("%s: %u BSS dropped, raise CONFIG_WIFI_SILABS_NCP_SCAN_RESULTS", dev->name,
+			dropped);
+	}
 	if (cb) {
 		wifi_ncp_scan_report(dev, cb);
 	} else if (data->supp.if_ctx && data->supp.cb.scan_done) {
@@ -447,6 +453,7 @@ static int wifi_ncp_scan_start(const struct device *dev, uint16_t channels, cons
 	for (size_t i = 0; i < ARRAY_SIZE(sta->scan); i++) {
 		sta->scan[i].used = false;
 	}
+	sta->scan_dropped = 0;
 	sta->scanning = true;
 	sta->scan_cb = cb;
 	k_mutex_unlock(&sta->lock);

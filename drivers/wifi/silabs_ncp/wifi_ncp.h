@@ -160,6 +160,8 @@ struct wifi_ncp_sta {
 	 */
 	scan_result_cb_t scan_cb;
 	struct wifi_ncp_scan_entry scan[CONFIG_WIFI_SILABS_NCP_SCAN_RESULTS];
+	/* Results not kept during the current scan, the array being full */
+	unsigned int scan_dropped;
 	/* Regulatory region reported by the co-processor, sl_wifi_region_code_t */
 	uint8_t region;
 	enum wifi_ncp_sta_state state;
