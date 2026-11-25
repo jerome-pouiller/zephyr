@@ -26,8 +26,8 @@
 /* CPC endpoints of the Wi-Fi station. Provisional: the identifiers are not
  * assigned yet.
  */
-#define WIFI_NCP_DATA_EP_ID 12
-#define WIFI_NCP_MGMT_EP_ID 11
+#define WIFI_NCP_DATA_EP_ID 4
+#define WIFI_NCP_MGMT_EP_ID 3
 
 /* Every frame exchanged with the network processor, on both endpoints,
  * starts with this descriptor. On the data endpoint the only command is
