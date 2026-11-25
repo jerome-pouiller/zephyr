@@ -383,19 +383,54 @@ void wifi_ncp_sta_rx(const struct device *dev, const uint8_t *frame, size_t len)
 		wifi_ncp_nwp_status(hdr), payload_len);
 }
 
-/* Start a scan, on one channel or all of them, for one SSID or any. The
- * results are reported to cb when given, else to the supplicant.
+/* Channels of the 2.4 GHz band the network processor may scan, bit 0 for
+ * channel 1. It rejects a scan naming a channel outside its regulatory region.
  */
-static int wifi_ncp_scan_start(const struct device *dev, uint8_t channel, const uint8_t *ssid,
+static uint16_t wifi_ncp_scan_region_channels(const struct wifi_ncp_sta *sta)
+{
+	switch (sta->region) {
+	case SL_WIFI_REGION_JP:
+		return BIT_MASK(14);
+	case SL_WIFI_REGION_EU:
+	case SL_WIFI_REGION_WORLD_DOMAIN:
+	case SL_WIFI_REGION_KR:
+	case SL_WIFI_REGION_WORLD_SAFE:
+	case SL_WIFI_REGION_CN:
+		return BIT_MASK(13);
+	default:
+		return BIT_MASK(11);
+	}
+}
+
+/* Start a scan on the given channels of the 2.4 GHz band, bit 0 for channel
+ * 1, none for all the channels of the region, for one SSID or any. The results
+ * are reported to cb when given, else to the supplicant.
+ */
+static int wifi_ncp_scan_start(const struct device *dev, uint16_t channels, const uint8_t *ssid,
 			       size_t ssid_len, bool passive, scan_result_cb_t cb)
 {
 	struct wifi_ncp_data *data = dev->data;
 	struct wifi_ncp_sta *sta = &data->sta;
 	struct wifi_ncp_nwp_hdr hdr = {.command_id = SLI_WIFI_CMD_SCAN};
 	sli_mgmtif_request_scan_t req = { };
+	uint16_t allowed = wifi_ncp_scan_region_channels(sta);
 	int ret;
 
-	req.scan_req.channel[0] = channel;
+	if (!channels) {
+		channels = allowed;
+	} else if (!(channels & allowed)) {
+		return -EINVAL;
+	}
+	channels &= allowed;
+	/* The channels must be named: with channel 0 and no bitmap, the
+	 * processor only listens on its current channel. In the host SDK a
+	 * single channel goes in the channel field, several in the bitmap.
+	 */
+	if (POPCOUNT(channels) == 1) {
+		req.scan_req.channel[0] = find_lsb_set(channels);
+	} else {
+		sys_put_le16(channels, req.scan_req.channel_bit_map_2_4);
+	}
 	if (ssid && ssid_len > 0 && ssid_len < SLI_WIFI_SSID_LEN) {
 		memcpy(req.scan_req.ssid, ssid, ssid_len);
 	}
@@ -433,18 +468,25 @@ int wifi_ncp_sta_scan(void *if_priv, struct wpa_driver_scan_params *params)
 	const struct device *dev = if_priv;
 	const uint8_t *ssid = NULL;
 	size_t ssid_len = 0;
-	uint8_t channel = 0;
+	uint16_t channels = 0;
 
-	/* A single frequency restricts the scan, anything else scans all */
-	if (params->freqs && params->freqs[0] && !params->freqs[1]) {
-		channel = wifi_utils_freq_to_chan(params->freqs[0]);
+	/* Frequencies outside the 2.4 GHz band are not scanned */
+	for (size_t i = 0; params->freqs && params->freqs[i]; i++) {
+		uint16_t chan = wifi_utils_freq_to_chan(params->freqs[i]);
+
+		if (wifi_utils_chan_to_band(chan) == WIFI_FREQ_BAND_2_4_GHZ) {
+			channels |= BIT(chan - 1);
+		}
+	}
+	if (params->freqs && params->freqs[0] && !channels) {
+		return -EINVAL;
 	}
 	if (params->num_ssids > 0) {
 		ssid = params->ssids[0].ssid;
 		ssid_len = params->ssids[0].ssid_len;
 	}
 
-	return wifi_ncp_scan_start(dev, channel, ssid, ssid_len, false, NULL);
+	return wifi_ncp_scan_start(dev, channels, ssid, ssid_len, false, NULL);
 }
 
 int wifi_ncp_sta_mgmt_scan(const struct device *dev, struct net_if *iface,
@@ -452,14 +494,22 @@ int wifi_ncp_sta_mgmt_scan(const struct device *dev, struct net_if *iface,
 {
 	const uint8_t *ssid = NULL;
 	size_t ssid_len = 0;
-	uint8_t channel = 0;
+	uint16_t channels = 0;
 	bool passive = false;
 
 	ARG_UNUSED(iface);
 
 	if (params) {
-		if (params->band_chan[0].channel && !params->band_chan[1].channel) {
-			channel = params->band_chan[0].channel;
+		/* Channels outside the 2.4 GHz band are not scanned */
+		for (size_t i = 0;
+		     i < ARRAY_SIZE(params->band_chan) && params->band_chan[i].channel; i++) {
+			if (params->band_chan[i].band == WIFI_FREQ_BAND_2_4_GHZ &&
+			    params->band_chan[i].channel <= 14) {
+				channels |= BIT(params->band_chan[i].channel - 1);
+			}
+		}
+		if (params->band_chan[0].channel && !channels) {
+			return -EINVAL;
 		}
 		if (params->ssids[0]) {
 			ssid = params->ssids[0];
@@ -468,7 +518,7 @@ int wifi_ncp_sta_mgmt_scan(const struct device *dev, struct net_if *iface,
 		passive = (params->scan_type == WIFI_SCAN_TYPE_PASSIVE);
 	}
 
-	return wifi_ncp_scan_start(dev, channel, ssid, ssid_len, passive, cb);
+	return wifi_ncp_scan_start(dev, channels, ssid, ssid_len, passive, cb);
 }
 
 int wifi_ncp_sta_scan_abort(void *if_priv)
@@ -1151,6 +1201,7 @@ int wifi_ncp_sta_init(const struct device *dev)
 			data->mac[1], data->mac[2], data->mac[3], data->mac[4], data->mac[5]);
 	}
 	if (region_len == sizeof(region_code)) {
+		data->sta.region = region_code;
 		LOG_DBG("%s: region %u", dev->name, region_code);
 	}
 
