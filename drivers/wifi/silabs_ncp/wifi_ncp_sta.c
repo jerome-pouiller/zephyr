@@ -395,8 +395,20 @@ void wifi_ncp_sta_rx(const struct device *dev, const uint8_t *frame, size_t len)
 		wifi_ncp_nwp_status(hdr), payload_len);
 }
 
-/* Channels the network processor may scan: it rejects a scan naming a channel
- * outside its regulatory region.
+const uint8_t wifi_ncp_5ghz_channels[WIFI_NCP_5GHZ_CHANNELS] = {
+	36,  40,  44,  48,  52,  56,  60,  64,  100, 104, 108, 112, 116,
+	120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 161, 165,
+};
+
+/* Ranges of the 5 GHz band, as bits of the scan bitmap */
+#define WIFI_NCP_5GHZ_36_64   GENMASK(7, 0)
+#define WIFI_NCP_5GHZ_100_140 GENMASK(18, 8)
+#define WIFI_NCP_5GHZ_144     BIT(19)
+#define WIFI_NCP_5GHZ_149_165 GENMASK(24, 20)
+
+/* Channels the network processor may scan, on the band it was started on: it
+ * rejects a scan naming a channel outside its regulatory region. The 5 GHz
+ * allocations are the usual ones, they are not reported by the processor.
  */
 static struct wifi_ncp_channels wifi_ncp_scan_region_channels(const struct wifi_ncp_sta *sta)
 {
@@ -405,17 +417,33 @@ static struct wifi_ncp_channels wifi_ncp_scan_region_channels(const struct wifi_
 	switch (sta->region) {
 	case SL_WIFI_REGION_JP:
 		allowed.band_2_4 = BIT_MASK(14);
+		allowed.band_5 = WIFI_NCP_5GHZ_36_64 | WIFI_NCP_5GHZ_100_140;
 		break;
 	case SL_WIFI_REGION_EU:
 	case SL_WIFI_REGION_WORLD_DOMAIN:
-	case SL_WIFI_REGION_KR:
 	case SL_WIFI_REGION_WORLD_SAFE:
+		allowed.band_2_4 = BIT_MASK(13);
+		allowed.band_5 = WIFI_NCP_5GHZ_36_64 | WIFI_NCP_5GHZ_100_140;
+		break;
+	case SL_WIFI_REGION_KR:
+		allowed.band_2_4 = BIT_MASK(13);
+		allowed.band_5 = WIFI_NCP_5GHZ_36_64 | WIFI_NCP_5GHZ_100_140 |
+				 WIFI_NCP_5GHZ_144 | WIFI_NCP_5GHZ_149_165;
+		break;
 	case SL_WIFI_REGION_CN:
 		allowed.band_2_4 = BIT_MASK(13);
+		allowed.band_5 = WIFI_NCP_5GHZ_36_64 | WIFI_NCP_5GHZ_149_165;
 		break;
 	default:
 		allowed.band_2_4 = BIT_MASK(11);
+		allowed.band_5 = WIFI_NCP_5GHZ_36_64 | WIFI_NCP_5GHZ_100_140 |
+				 WIFI_NCP_5GHZ_144 | WIFI_NCP_5GHZ_149_165;
 		break;
+	}
+	if (IS_ENABLED(CONFIG_WIFI_SILABS_NCP_BAND_5GHZ)) {
+		allowed.band_2_4 = 0;
+	} else {
+		allowed.band_5 = 0;
 	}
 
 	return allowed;
@@ -429,20 +457,31 @@ static int wifi_ncp_channels_add(struct wifi_ncp_channels *set, enum wifi_freque
 		set->band_2_4 |= BIT(channel - 1);
 		return 0;
 	}
+	if (band == WIFI_FREQ_BAND_5_GHZ) {
+		for (size_t i = 0; i < ARRAY_SIZE(wifi_ncp_5ghz_channels); i++) {
+			if (wifi_ncp_5ghz_channels[i] == channel) {
+				set->band_5 |= BIT(i);
+				return 0;
+			}
+		}
+	}
 
 	return -EINVAL;
 }
 
 static bool wifi_ncp_channels_empty(const struct wifi_ncp_channels *set)
 {
-	return !set->band_2_4;
+	return !set->band_2_4 && !set->band_5;
 }
 
 /* The channel of a set holding only one, else 0 */
 static uint8_t wifi_ncp_channels_single(const struct wifi_ncp_channels *set)
 {
-	if (POPCOUNT(set->band_2_4) == 1) {
+	if (!set->band_5 && POPCOUNT(set->band_2_4) == 1) {
 		return find_lsb_set(set->band_2_4);
+	}
+	if (!set->band_2_4 && POPCOUNT(set->band_5) == 1) {
+		return wifi_ncp_5ghz_channels[find_lsb_set(set->band_5) - 1];
 	}
 
 	return 0;
@@ -466,6 +505,7 @@ static int wifi_ncp_scan_start(const struct device *dev, const struct wifi_ncp_c
 
 	if (!wifi_ncp_channels_empty(channels)) {
 		set.band_2_4 &= channels->band_2_4;
+		set.band_5 &= channels->band_5;
 		if (wifi_ncp_channels_empty(&set)) {
 			return -EINVAL;
 		}
@@ -479,6 +519,7 @@ static int wifi_ncp_scan_start(const struct device *dev, const struct wifi_ncp_c
 		req.scan_req.channel[0] = single;
 	} else {
 		sys_put_le16(set.band_2_4, req.scan_req.channel_bit_map_2_4);
+		sys_put_le32(set.band_5, req.scan_req.channel_bit_map_5);
 	}
 	if (ssid && ssid_len > 0 && ssid_len < SLI_WIFI_SSID_LEN) {
 		memcpy(req.scan_req.ssid, ssid, ssid_len);
@@ -1155,8 +1196,8 @@ int wifi_ncp_sta_send_external_auth_status(void *if_priv, struct external_auth *
 }
 
 /* The co-processor is reachable: start the network processor, wait for it to
- * be ready, configure it as a station on the 2.4 GHz band and learn its MAC
- * address. The sequence is the one of the WiseConnect host SDK. A failure
+ * be ready, configure it as a station on the configured band and learn its
+ * MAC address. The sequence is the one of the WiseConnect host SDK. A failure
  * reported by the network processor is logged and leaves the device usable,
  * as the firmware is still evolving.
  */
@@ -1173,7 +1214,10 @@ int wifi_ncp_sta_init(const struct device *dev)
 	};
 	/* The fields are reserved, or ignored in station mode */
 	sli_wifi_feature_frame_request_t features = { };
-	sl_wifi_band_mode_t band = SL_WIFI_BAND_MODE_2_4GHZ;
+	/* Dual band operation is not available yet */
+	sl_wifi_band_mode_t band = IS_ENABLED(CONFIG_WIFI_SILABS_NCP_BAND_5GHZ)
+					   ? SL_WIFI_BAND_MODE_5GHZ
+					   : SL_WIFI_BAND_MODE_2_4GHZ;
 	sli_wifi_set_region_request_t region = {
 		.set_region_code_from_user_cmd = SET_REGION_CODE_FROM_USER,
 		.region_code = SL_WIFI_DEFAULT_REGION,

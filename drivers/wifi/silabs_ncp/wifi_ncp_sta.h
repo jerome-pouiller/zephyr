@@ -23,6 +23,8 @@ int wifi_ncp_nwp_cmd(const struct device *dev, const struct wifi_ncp_nwp_hdr *hd
 		     size_t head_len, const void *body, size_t body_len, void *resp,
 		     size_t *resp_size);
 
+extern const uint8_t wifi_ncp_5ghz_channels[WIFI_NCP_5GHZ_CHANNELS];
+
 int wifi_ncp_sta_init(const struct device *dev);
 
 /* Handle a frame of the management endpoint, on the work queue */

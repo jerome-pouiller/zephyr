@@ -58,6 +58,21 @@ config WIFI_SILABS_NCP_CMD_TIMEOUT_MS
 	int "Time to wait for the confirmation of a command, in milliseconds"
 	default 2000
 
+choice WIFI_SILABS_NCP_BAND
+	prompt "Band of the station"
+	default WIFI_SILABS_NCP_BAND_5GHZ
+	help
+	  The network processor operates on one band, chosen when it is
+	  started. Dual band operation is not available yet.
+
+config WIFI_SILABS_NCP_BAND_5GHZ
+	bool "5 GHz"
+
+config WIFI_SILABS_NCP_BAND_2_4GHZ
+	bool "2.4 GHz"
+
+endchoice
+
 config WIFI_SILABS_NCP_SCAN_RESULTS
 	int "Number of scan results kept for the supplicant"
 	default 16

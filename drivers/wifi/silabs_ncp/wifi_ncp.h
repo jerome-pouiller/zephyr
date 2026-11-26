@@ -139,11 +139,17 @@ struct wifi_ncp_scan_entry {
 	uint8_t ie[CONFIG_WIFI_SILABS_NCP_SCAN_IE_MAX];
 };
 
+/* Channels of the 5 GHz band the network processor may scan, in the order of
+ * its scan bitmap
+ */
+#define WIFI_NCP_5GHZ_CHANNELS 25
+
 /* Channels of a scan, one bit per channel: bit 0 for channel 1 of the 2.4 GHz
- * band
+ * band, bit n for the nth channel of wifi_ncp_5ghz_channels
  */
 struct wifi_ncp_channels {
 	uint16_t band_2_4;
+	uint32_t band_5;
 };
 
 /* Largest RSN element the supplicant may ask to associate with */

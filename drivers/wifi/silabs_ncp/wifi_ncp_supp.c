@@ -19,6 +19,7 @@ LOG_MODULE_DECLARE(wifi_ncp, CONFIG_WIFI_LOG_LEVEL);
 
 #define WIFI_NCP_2_4GHZ_CHANNELS 13
 #define WIFI_NCP_2_4GHZ_BASE_MHZ 2407
+#define WIFI_NCP_5GHZ_BASE_MHZ   5000
 
 void *wifi_ncp_supp_init(void *supp_drv_if_ctx, const char *iface_name,
 			 struct zep_wpa_supp_dev_callbk_fns *callbk_fns)
@@ -61,32 +62,49 @@ int wifi_ncp_supp_get_capa(void *if_priv, struct wpa_driver_capa *capa)
 	return 0;
 }
 
-/* The radio capabilities are not reported by the co-processor yet */
+/* The radio capabilities are not reported by the co-processor yet: the band
+ * it was started on is described, with every channel of the band.
+ */
 int wifi_ncp_supp_get_wiphy(void *if_priv)
 {
 	const struct device *dev = if_priv;
 	struct wifi_ncp_data *data = dev->data;
 	struct wpa_supp_event_supported_band band;
-	static const uint16_t bitrates[] = {
-		10, 20, 55, 110, 60, 90, 120, 180, 240, 360, 480, 540
-	};
+	static const uint16_t dsss_bitrates[] = { 10, 20, 55, 110 };
+	static const uint16_t ofdm_bitrates[] = { 60, 90, 120, 180, 240, 360, 480, 540 };
+	size_t n = 0;
 
 	if (!data->supp.if_ctx || !data->supp.cb.get_wiphy_res) {
 		return -EINVAL;
 	}
 
 	memset(&band, 0, sizeof(band));
-	band.band = WIFI_FREQ_BAND_2_4_GHZ;
-	band.wpa_supp_n_channels = WIFI_NCP_2_4GHZ_CHANNELS;
-	for (size_t i = 0; i < WIFI_NCP_2_4GHZ_CHANNELS; i++) {
-		band.channels[i].ch_valid = 1;
-		band.channels[i].center_frequency = WIFI_NCP_2_4GHZ_BASE_MHZ + (i + 1) * 5;
-		band.channels[i].wpa_supp_max_power = 20;
+	if (IS_ENABLED(CONFIG_WIFI_SILABS_NCP_BAND_5GHZ)) {
+		band.band = WIFI_FREQ_BAND_5_GHZ;
+		band.wpa_supp_n_channels = WIFI_NCP_5GHZ_CHANNELS;
+		for (size_t i = 0; i < WIFI_NCP_5GHZ_CHANNELS; i++) {
+			band.channels[i].ch_valid = 1;
+			band.channels[i].center_frequency =
+				WIFI_NCP_5GHZ_BASE_MHZ + wifi_ncp_5ghz_channels[i] * 5;
+			band.channels[i].wpa_supp_max_power = 20;
+		}
+	} else {
+		band.band = WIFI_FREQ_BAND_2_4_GHZ;
+		band.wpa_supp_n_channels = WIFI_NCP_2_4GHZ_CHANNELS;
+		for (size_t i = 0; i < WIFI_NCP_2_4GHZ_CHANNELS; i++) {
+			band.channels[i].ch_valid = 1;
+			band.channels[i].center_frequency =
+				WIFI_NCP_2_4GHZ_BASE_MHZ + (i + 1) * 5;
+			band.channels[i].wpa_supp_max_power = 20;
+		}
+		for (size_t i = 0; i < ARRAY_SIZE(dsss_bitrates); i++) {
+			band.bitrates[n++].wpa_supp_bitrate = dsss_bitrates[i];
+		}
 	}
-	band.wpa_supp_n_bitrates = ARRAY_SIZE(bitrates);
-	for (size_t i = 0; i < ARRAY_SIZE(bitrates); i++) {
-		band.bitrates[i].wpa_supp_bitrate = bitrates[i];
+	for (size_t i = 0; i < ARRAY_SIZE(ofdm_bitrates); i++) {
+		band.bitrates[n++].wpa_supp_bitrate = ofdm_bitrates[i];
 	}
+	band.wpa_supp_n_bitrates = n;
 
 	data->supp.cb.get_wiphy_res(data->supp.if_ctx, &band);
 	k_sem_give(&data->supp.if_ctx->drv_resp_sem);
