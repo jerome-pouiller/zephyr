@@ -58,13 +58,6 @@ BUILD_ASSERT(sizeof(struct wifi_ncp_nwp_hdr) == 16);
 
 #define WIFI_NCP_NWP_CMD_DATA 0
 
-/* Starts the network processor, which then reports it is ready. No payload,
- * no response. Provisional, until sli_nwp.h declares it.
- */
-#ifndef SLI_WIFI_CMD_NWP_INIT
-#define SLI_WIFI_CMD_NWP_INIT 0x0D
-#endif
-
 /* Flag of a sent frame: report its transmission with a TX status */
 #define WIFI_NCP_NWP_FLAG_CONFIRM BIT(2)
 

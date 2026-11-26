@@ -741,7 +741,6 @@ static void wifi_ncp_join_ap_info(sli_wifi_sta_join_ap_info_t *info,
 	ie = wifi_ncp_ie_find(entry->ie, entry->ie_len, WLAN_EID_SUPP_RATES);
 	if (ie) {
 		res->supported_rates.rates_len = MIN(ie[1], SLI_WIFI_RATES_LEN);
-		res->supported_rates.rates_eid = ie[0];
 		memcpy(res->supported_rates.rates, &ie[2], res->supported_rates.rates_len);
 	}
 	ie = wifi_ncp_ie_find(entry->ie, entry->ie_len, WLAN_EID_EXT_SUPP_RATES);
@@ -753,20 +752,9 @@ static void wifi_ncp_join_ap_info(sli_wifi_sta_join_ap_info_t *info,
 	if (ie && 2 + ie[1] <= sizeof(res->ht_cap_ie)) {
 		memcpy(res->ht_cap_ie, ie, 2 + ie[1]);
 		res->ht_cap_present = 1;
-		res->capable_11n = 1;
-	}
-	ie = wifi_ncp_ie_find(entry->ie, entry->ie_len, WLAN_EID_HT_OPERATION);
-	if (ie && 2 + ie[1] <= sizeof(res->ht_oper_ie)) {
-		memcpy(res->ht_oper_ie, ie, 2 + ie[1]);
-		res->ht_oper_present = 1;
 	}
 	ie = wifi_ncp_ie_find_vendor(entry->ie, entry->ie_len, wmm_oui, WMM_OUI_TYPE);
-	if (ie && ie[1] >= 6) {
-		res->vendor_ie.eid = ie[0];
-		res->vendor_ie.eid_len = ie[1];
-		memcpy(res->vendor_ie.oui, &ie[2], sizeof(res->vendor_ie.oui));
-		res->vendor_ie.oui_type = ie[5];
-		memcpy(&res->vendor_ie.wmm, &ie[6], MIN(ie[1] - 4, sizeof(res->vendor_ie.wmm)));
+	if (ie) {
 		res->qos_enable = 1;
 	}
 	ie = wifi_ncp_ie_find(entry->ie, entry->ie_len, WLAN_EID_RSN);
@@ -783,10 +771,6 @@ static void wifi_ncp_join_ap_info(sli_wifi_sta_join_ap_info_t *info,
 	res->he_capable =
 		wifi_ncp_ie_find_ext(entry->ie, entry->ie_len, WLAN_EID_EXT_HE_CAPABILITIES) ? 1
 											     : 0;
-	ie = wifi_ncp_ie_find(entry->ie, entry->ie_len, WLAN_EID_MOBILITY_DOMAIN);
-	if (ie && 2 + ie[1] == sizeof(info->mdie)) {
-		memcpy(&info->mdie, ie, sizeof(info->mdie));
-	}
 }
 
 static uint8_t wifi_ncp_security_type(unsigned int key_mgmt)
@@ -861,7 +845,7 @@ int wifi_ncp_sta_associate(void *if_priv, struct wpa_driver_associate_params *pa
 	join.join_req.listen_interval_multiplier = SLI_WIFI_LISTEN_INTERVAL_MULTIPLIER_DEFAULT;
 	join.join_req.vap_id = SLI_WIFI_STA_MODE;
 	memcpy(join.join_req.join_bssid, params->bssid, NET_ETH_ADDR_LEN);
-	join.join_ext_info.vif_type = SLI_NWP_OP_STATION;
+	join.join_ext_info.vif_type = SLI_VIF_TYPE_STA;
 	memcpy(join.join_ext_info.bssid, params->bssid, NET_ETH_ADDR_LEN);
 	join.join_ext_info.wps_session = SLI_WIFI_WPS_SESSION_DISABLE;
 	join.join_ext_info.sae_pmksa_caching = SLI_WIFI_SAE_PMKSA_CACHING_DISABLE;
@@ -1148,7 +1132,7 @@ int wifi_ncp_sta_init(const struct device *dev)
 	struct wifi_ncp_data *data = dev->data;
 	struct wifi_ncp_nwp_hdr hdr;
 	sl_wifi_system_boot_configuration_t boot = {
-		.vif_type = SLI_NWP_OP_STATION,
+		.vif_type = SLI_VIF_TYPE_STA,
 		.feature_bit_map = SL_WIFI_FEAT_AGGREGATION,
 		.custom_feature_bit_map = SL_WIFI_SYSTEM_CUSTOM_FEAT_EXTENSION_VALID,
 		/* Required by the WPA3 modes */
@@ -1183,7 +1167,7 @@ int wifi_ncp_sta_init(const struct device *dev)
 
 	/* The ready indication answers this frame */
 	memset(&hdr, 0, sizeof(hdr));
-	hdr.command_id = SLI_WIFI_CMD_NWP_INIT;
+	hdr.command_id = SLI_WIFI_REQ_NWP_INIT;
 	ret = wifi_ncp_nwp_send(dev, &hdr, NULL, 0, NULL, 0);
 	if (ret) {
 		return ret;
