@@ -219,6 +219,9 @@ struct wifi_ncp_data {
 	struct wifi_ncp_mgmt_rx_slot mgmt_rx[CONFIG_WIFI_SILABS_NCP_MGMT_RX_COUNT];
 };
 
+/* Hand a received Ethernet frame to the network stack */
+void wifi_ncp_eth_recv(const struct device *dev, const uint8_t *frame, size_t len);
+
 /* Queue a frame on the management endpoint: the descriptor, then the two
  * optional parts of the payload.
  */

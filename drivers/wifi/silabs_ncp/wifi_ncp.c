@@ -160,25 +160,10 @@ static void wifi_ncp_mgmt_ep_event(sl_cpc_ep_t *ep, sl_cpc_ep_event_type_t type,
 	}
 }
 
-/* Hand a received Ethernet frame to the network stack. The CPC buffer is
- * given back to the endpoint whatever the outcome.
- */
-static void wifi_ncp_data_recv(const struct device *dev, const sl_cpc_buf_t *buf)
+void wifi_ncp_eth_recv(const struct device *dev, const uint8_t *frame, size_t len)
 {
 	struct wifi_ncp_data *data = dev->data;
-	const struct wifi_ncp_nwp_hdr *hdr = buf->ptr;
-	const uint8_t *frame;
-	size_t len;
 	struct net_pkt *pkt;
-
-	if (buf->len < sizeof(*hdr) || hdr->command_id != WIFI_NCP_NWP_CMD_DATA ||
-	    buf->len < sizeof(*hdr) + hdr->ext_desc_size) {
-		LOG_WRN("%s: unexpected data frame (%u bytes), dropping", dev->name, buf->len);
-		return;
-	}
-	/* The extended descriptor is not used */
-	frame = (const uint8_t *)(hdr + 1) + hdr->ext_desc_size;
-	len = buf->len - sizeof(*hdr) - hdr->ext_desc_size;
 
 	pkt = net_pkt_rx_alloc_with_buffer(data->iface, len, AF_UNSPEC, 0, K_NO_WAIT);
 	if (!pkt) {
@@ -196,6 +181,23 @@ static void wifi_ncp_data_recv(const struct device *dev, const sl_cpc_buf_t *buf
 		LOG_DBG("%s: packet rejected by the stack", dev->name);
 		net_pkt_unref(pkt);
 	}
+}
+
+/* Hand a received data frame to the network stack. The CPC buffer is given
+ * back to the endpoint whatever the outcome.
+ */
+static void wifi_ncp_data_recv(const struct device *dev, const sl_cpc_buf_t *buf)
+{
+	const struct wifi_ncp_nwp_hdr *hdr = buf->ptr;
+
+	if (buf->len < sizeof(*hdr) || hdr->command_id != WIFI_NCP_NWP_CMD_DATA ||
+	    buf->len < sizeof(*hdr) + hdr->ext_desc_size) {
+		LOG_WRN("%s: unexpected data frame (%u bytes), dropping", dev->name, buf->len);
+		return;
+	}
+	/* The extended descriptor is not used */
+	wifi_ncp_eth_recv(dev, (const uint8_t *)(hdr + 1) + hdr->ext_desc_size,
+			  buf->len - sizeof(*hdr) - hdr->ext_desc_size);
 }
 
 static void wifi_ncp_data_ep_event(sl_cpc_ep_t *ep, sl_cpc_ep_event_type_t type,
