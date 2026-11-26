@@ -1118,8 +1118,9 @@ int wifi_ncp_sta_get_conn_info(void *if_priv, struct wpa_conn_info *info)
 }
 
 /* Authentication frames built by the supplicant for the SAE exchange. The
- * co-processor is told when the commit is sent, and the confirmation of the
- * transmission is reported as an acknowledgment.
+ * co-processor is told before the commit is sent, and the confirmation of the
+ * transmission is reported as an acknowledgment. The descriptors are filled
+ * as in the captures of the host SDK.
  */
 int wifi_ncp_sta_send_mlme(void *if_priv, const u8 *data_buf, size_t data_len, int noack,
 			   unsigned int freq, int no_cck, int offchanok, unsigned int wait_time,
@@ -1127,8 +1128,15 @@ int wifi_ncp_sta_send_mlme(void *if_priv, const u8 *data_buf, size_t data_len, i
 {
 	const struct device *dev = if_priv;
 	struct wifi_ncp_data *data = dev->data;
-	struct wifi_ncp_nwp_hdr tx_hdr = {.command_id = SLI_WIFI_TX_DOT11_MGMT_FRAME};
-	struct wifi_ncp_nwp_hdr commit_hdr = {.command_id = SLI_MGMTIF_CMD_SAE_COMMIT_STATUS};
+	struct wifi_ncp_nwp_hdr tx_hdr = {
+		.command_id = SLI_WIFI_TX_DOT11_MGMT_FRAME,
+		.mgmt_hdr_len = IEEE80211_HDRLEN,
+		.frame_info = 1,
+	};
+	struct wifi_ncp_nwp_hdr commit_hdr = {
+		.command_id = SLI_MGMTIF_CMD_SAE_COMMIT_STATUS,
+		.frame_info = 1,
+	};
 	const struct ieee80211_mgmt *mgmt = (const struct ieee80211_mgmt *)data_buf;
 	sli_mgmtif_sae_commit_t commit = SLI_WIFI_SAE_COMMIT_STATE_TRUE;
 	uint16_t fc;
@@ -1151,18 +1159,18 @@ int wifi_ncp_sta_send_mlme(void *if_priv, const u8 *data_buf, size_t data_len, i
 		return -ENOTSUP;
 	}
 
-	ret = wifi_ncp_nwp_send(dev, &tx_hdr, data_buf, data_len, NULL, 0);
-	if (ret) {
-		LOG_ERR("%s: authentication frame transmission failed: %d", dev->name, ret);
-		return -EIO;
-	}
-
 	if (sys_le16_to_cpu(mgmt->u.auth.auth_transaction) == 1) {
 		ret = wifi_ncp_nwp_send(dev, &commit_hdr, &commit, sizeof(commit), NULL, 0);
 		if (ret) {
 			LOG_ERR("%s: SAE commit status failed: %d", dev->name, ret);
 			return -EIO;
 		}
+	}
+
+	ret = wifi_ncp_nwp_send(dev, &tx_hdr, data_buf, data_len, NULL, 0);
+	if (ret) {
+		LOG_ERR("%s: authentication frame transmission failed: %d", dev->name, ret);
+		return -EIO;
 	}
 
 	if (data->supp.if_ctx && data->supp.cb.mgmt_tx_status) {
@@ -1178,7 +1186,10 @@ int wifi_ncp_sta_send_mlme(void *if_priv, const u8 *data_buf, size_t data_len, i
 int wifi_ncp_sta_send_external_auth_status(void *if_priv, struct external_auth *params)
 {
 	const struct device *dev = if_priv;
-	struct wifi_ncp_nwp_hdr hdr = {.command_id = SLI_MGMTIF_CMD_SAE_CONFIRM_SUCCESS};
+	struct wifi_ncp_nwp_hdr hdr = {
+		.command_id = SLI_MGMTIF_CMD_SAE_CONFIRM_SUCCESS,
+		.frame_info = 1,
+	};
 	int ret;
 
 	if (params->status != WLAN_STATUS_SUCCESS) {
