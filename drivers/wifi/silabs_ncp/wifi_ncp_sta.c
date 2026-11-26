@@ -913,6 +913,16 @@ int wifi_ncp_sta_associate(void *if_priv, struct wpa_driver_associate_params *pa
 	memcpy(load.ie_data, params->wpa_ie, load.ie_length);
 
 	join.join_req.security_type = wifi_ncp_security_type(params->key_mgmt_suite);
+	/* Management frame protection, as the host SDK asks for it on WPA3.
+	 * WPA2 is left as it is until it is validated with the bitmap.
+	 */
+	if (params->key_mgmt_suite & WPA_KEY_MGMT_SAE) {
+		if (params->mgmt_frame_protection == MGMT_FRAME_PROTECTION_REQUIRED) {
+			join.join_req.join_feature_bitmap |= SL_WIFI_JOIN_FEAT_MFP_CAPABLE_REQUIRED;
+		} else if (params->mgmt_frame_protection == MGMT_FRAME_PROTECTION_OPTIONAL) {
+			join.join_req.join_feature_bitmap |= SL_WIFI_JOIN_FEAT_MFP_CAPABLE_ONLY;
+		}
+	}
 	join.join_req.power_level = SLI_WIFI_TX_POWER_DECIDBM_MAX;
 	memcpy(join.join_req.ssid, params->ssid, params->ssid_len);
 	join.join_req.ssid_len = params->ssid_len;
