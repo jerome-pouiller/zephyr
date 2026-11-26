@@ -139,6 +139,13 @@ struct wifi_ncp_scan_entry {
 	uint8_t ie[CONFIG_WIFI_SILABS_NCP_SCAN_IE_MAX];
 };
 
+/* Channels of a scan, one bit per channel: bit 0 for channel 1 of the 2.4 GHz
+ * band
+ */
+struct wifi_ncp_channels {
+	uint16_t band_2_4;
+};
+
 /* Largest RSN element the supplicant may ask to associate with */
 #define WIFI_NCP_WPA_IE_MAX 64
 
