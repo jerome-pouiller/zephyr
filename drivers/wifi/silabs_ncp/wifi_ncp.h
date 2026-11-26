@@ -41,7 +41,14 @@ struct wifi_ncp_nwp_hdr {
 	uint8_t flags;
 	/* Bytes between the descriptor and the payload */
 	uint8_t ext_desc_size;
-	uint8_t reserved1[2];
+	/* DW1.B1: on a raw management frame sent, the length of its 802.11
+	 * header in the captures of the host SDK
+	 */
+	uint8_t mgmt_hdr_len;
+	/* DW1.B2: set to 1 on the frames of the SAE exchange in the captures
+	 * of the host SDK, meaning not documented
+	 */
+	uint8_t frame_info;
 	/* DW1.B3: SLI_WIFI_STA_MODE or SLI_WIFI_AP_MODE */
 	uint8_t iface;
 	/* DW2.B0, received frames */
