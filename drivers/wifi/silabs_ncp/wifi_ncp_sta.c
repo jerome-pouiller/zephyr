@@ -375,6 +375,12 @@ void wifi_ncp_sta_rx(const struct device *dev, const uint8_t *frame, size_t len)
 	payload = frame + sizeof(*hdr) + hdr->ext_desc_size;
 	payload_len = len - sizeof(*hdr) - hdr->ext_desc_size;
 
+	/* EAPOL frames arrive on the management endpoint, as data frames */
+	if (wifi_ncp_nwp_queue(hdr) == WIFI_NCP_NWP_QUEUE_DATA) {
+		wifi_ncp_eth_recv(dev, payload, payload_len);
+		return;
+	}
+
 	if (wifi_ncp_cmd_confirm(dev, hdr, payload, payload_len)) {
 		return;
 	}

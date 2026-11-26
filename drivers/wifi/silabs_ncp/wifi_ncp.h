@@ -83,6 +83,11 @@ static inline uint16_t wifi_ncp_nwp_status(const struct wifi_ncp_nwp_hdr *hdr)
 	return sys_le16_to_cpu(hdr->status);
 }
 
+static inline uint8_t wifi_ncp_nwp_queue(const struct wifi_ncp_nwp_hdr *hdr)
+{
+	return sys_le16_to_cpu(hdr->len_queue) >> 12;
+}
+
 /* Largest Ethernet frame with its descriptor, as a CPC payload */
 #define WIFI_NCP_DATA_MTU                                                                          \
 	ROUND_UP(sizeof(struct wifi_ncp_nwp_hdr) + NET_ETH_MAX_FRAME_SIZE, SL_CPC_BUF_MIN_ALIGNMENT)
