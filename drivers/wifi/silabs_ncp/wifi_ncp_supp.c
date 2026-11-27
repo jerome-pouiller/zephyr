@@ -62,25 +62,20 @@ int wifi_ncp_supp_get_capa(void *if_priv, struct wpa_driver_capa *capa)
 	return 0;
 }
 
-/* The radio capabilities are not reported by the co-processor yet: the band
- * it was started on is described, with every channel of the band.
+/* Describe a band to the supplicant: every channel of the band, the OFDM
+ * rates, and the DSSS rates on 2.4 GHz
  */
-int wifi_ncp_supp_get_wiphy(void *if_priv)
+static void wifi_ncp_supp_report_band(const struct device *dev, enum wifi_frequency_bands which)
 {
-	const struct device *dev = if_priv;
 	struct wifi_ncp_data *data = dev->data;
 	struct wpa_supp_event_supported_band band;
 	static const uint16_t dsss_bitrates[] = { 10, 20, 55, 110 };
 	static const uint16_t ofdm_bitrates[] = { 60, 90, 120, 180, 240, 360, 480, 540 };
 	size_t n = 0;
 
-	if (!data->supp.if_ctx || !data->supp.cb.get_wiphy_res) {
-		return -EINVAL;
-	}
-
 	memset(&band, 0, sizeof(band));
-	if (IS_ENABLED(CONFIG_WIFI_SILABS_NCP_BAND_5GHZ)) {
-		band.band = WIFI_FREQ_BAND_5_GHZ;
+	band.band = which;
+	if (which == WIFI_FREQ_BAND_5_GHZ) {
 		band.wpa_supp_n_channels = WIFI_NCP_5GHZ_CHANNELS;
 		for (size_t i = 0; i < WIFI_NCP_5GHZ_CHANNELS; i++) {
 			band.channels[i].ch_valid = 1;
@@ -89,7 +84,6 @@ int wifi_ncp_supp_get_wiphy(void *if_priv)
 			band.channels[i].wpa_supp_max_power = 20;
 		}
 	} else {
-		band.band = WIFI_FREQ_BAND_2_4_GHZ;
 		band.wpa_supp_n_channels = WIFI_NCP_2_4GHZ_CHANNELS;
 		for (size_t i = 0; i < WIFI_NCP_2_4GHZ_CHANNELS; i++) {
 			band.channels[i].ch_valid = 1;
@@ -107,7 +101,24 @@ int wifi_ncp_supp_get_wiphy(void *if_priv)
 	band.wpa_supp_n_bitrates = n;
 
 	data->supp.cb.get_wiphy_res(data->supp.if_ctx, &band);
-	k_sem_give(&data->supp.if_ctx->drv_resp_sem);
+}
+
+/* The radio capabilities are not reported by the co-processor yet: both
+ * bands are described with every channel. The supplicant takes one band per
+ * call, and the end of the list as a last call without band.
+ */
+int wifi_ncp_supp_get_wiphy(void *if_priv)
+{
+	const struct device *dev = if_priv;
+	struct wifi_ncp_data *data = dev->data;
+
+	if (!data->supp.if_ctx || !data->supp.cb.get_wiphy_res) {
+		return -EINVAL;
+	}
+
+	wifi_ncp_supp_report_band(dev, WIFI_FREQ_BAND_2_4_GHZ);
+	wifi_ncp_supp_report_band(dev, WIFI_FREQ_BAND_5_GHZ);
+	data->supp.cb.get_wiphy_res(data->supp.if_ctx, NULL);
 
 	return 0;
 }

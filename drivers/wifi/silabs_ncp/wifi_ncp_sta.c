@@ -406,8 +406,8 @@ const uint8_t wifi_ncp_5ghz_channels[WIFI_NCP_5GHZ_CHANNELS] = {
 #define WIFI_NCP_5GHZ_144     BIT(19)
 #define WIFI_NCP_5GHZ_149_165 GENMASK(24, 20)
 
-/* Channels the network processor may scan, on the band it was started on: it
- * rejects a scan naming a channel outside its regulatory region. The 5 GHz
+/* Channels the network processor may scan, on both bands: it rejects a scan
+ * naming a channel outside its regulatory region. The 5 GHz
  * allocations are the usual ones, they are not reported by the processor.
  */
 static struct wifi_ncp_channels wifi_ncp_scan_region_channels(const struct wifi_ncp_sta *sta)
@@ -439,11 +439,6 @@ static struct wifi_ncp_channels wifi_ncp_scan_region_channels(const struct wifi_
 		allowed.band_5 = WIFI_NCP_5GHZ_36_64 | WIFI_NCP_5GHZ_100_140 |
 				 WIFI_NCP_5GHZ_144 | WIFI_NCP_5GHZ_149_165;
 		break;
-	}
-	if (IS_ENABLED(CONFIG_WIFI_SILABS_NCP_BAND_5GHZ)) {
-		allowed.band_2_4 = 0;
-	} else {
-		allowed.band_5 = 0;
 	}
 
 	return allowed;
@@ -1228,10 +1223,10 @@ int wifi_ncp_sta_send_external_auth_status(void *if_priv, struct external_auth *
 }
 
 /* The co-processor is reachable: start the network processor, wait for it to
- * be ready, configure it as a station on the configured band and learn its
- * MAC address. The sequence is the one of the WiseConnect host SDK. A failure
- * reported by the network processor is logged and leaves the device usable,
- * as the firmware is still evolving.
+ * be ready, configure it as a dual band station and learn its MAC address.
+ * The sequence is the one of the WiseConnect host SDK. A failure reported by
+ * the network processor is logged and leaves the device usable, as the
+ * firmware is still evolving.
  */
 int wifi_ncp_sta_init(const struct device *dev)
 {
@@ -1246,10 +1241,9 @@ int wifi_ncp_sta_init(const struct device *dev)
 	};
 	/* The fields are reserved, or ignored in station mode */
 	sli_wifi_feature_frame_request_t features = { };
-	/* Dual band operation is not available yet */
 	sl_wifi_band_mode_t band = IS_ENABLED(CONFIG_WIFI_SILABS_NCP_BAND_5GHZ)
-					   ? SL_WIFI_BAND_MODE_5GHZ
-					   : SL_WIFI_BAND_MODE_2_4GHZ;
+				   ? SL_WIFI_BAND_MODE_5GHZ
+				   : SL_WIFI_BAND_MODE_2_4GHZ;
 	sli_wifi_set_region_request_t region = {
 		.set_region_code_from_user_cmd = SET_REGION_CODE_FROM_USER,
 		.region_code = SL_WIFI_DEFAULT_REGION,
