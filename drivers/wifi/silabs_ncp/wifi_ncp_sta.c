@@ -1000,6 +1000,14 @@ int wifi_ncp_sta_set_key(void *if_priv, const unsigned char *ifname, enum wpa_al
 	if (alg == WPA_ALG_NONE) {
 		return 0;
 	}
+	/* Before the last frame of the handshake, the supplicant offers the
+	 * pairwise key for reception only. The co-processor installs a key for
+	 * both directions and would encrypt that frame: wait for the final
+	 * installation, which follows the frame, as the host SDK does.
+	 */
+	if (key_flag & KEY_FLAG_NEXT) {
+		return 0;
+	}
 	if (!key || key_len > SLI_WIFI_MAX_KEY_LEN || alg > 0xf) {
 		return -EINVAL;
 	}
