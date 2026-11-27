@@ -507,6 +507,7 @@ static int wifi_ncp_scan_start(const struct device *dev, const struct wifi_ncp_c
 		set.band_2_4 &= channels->band_2_4;
 		set.band_5 &= channels->band_5;
 		if (wifi_ncp_channels_empty(&set)) {
+			LOG_DBG("%s: none of the channels asked is in the band", dev->name);
 			return -EINVAL;
 		}
 	}
@@ -568,6 +569,8 @@ int wifi_ncp_sta_scan(void *if_priv, struct wpa_driver_scan_params *params)
 		wifi_ncp_channels_add(&channels, wifi_utils_chan_to_band(chan), chan);
 	}
 	if (params->freqs && params->freqs[0] && wifi_ncp_channels_empty(&channels)) {
+		LOG_DBG("%s: nothing to scan in the band, first frequency %d MHz", dev->name,
+			params->freqs[0]);
 		return -EINVAL;
 	}
 	if (params->num_ssids > 0) {
