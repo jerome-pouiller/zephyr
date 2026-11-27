@@ -321,7 +321,12 @@ static int wifi_ncp_send(const struct device *dev, struct net_pkt *pkt)
 		return -EMSGSIZE;
 	}
 
-	ret = k_mem_slab_alloc(cfg->data_tx_slab, (void **)&slot, K_NO_WAIT);
+	/* The slots are released by the send-done events, which the
+	 * co-processor returns within a few polling periods of the bus: wait for
+	 * one rather than drop the packet, the sender is a thread.
+	 */
+	ret = k_mem_slab_alloc(cfg->data_tx_slab, (void **)&slot,
+			       K_MSEC(CONFIG_WIFI_SILABS_NCP_DATA_TX_TIMEOUT_MS));
 	if (ret < 0) {
 		LOG_DBG("%s: no TX slot", dev->name);
 		return -ENOMEM;

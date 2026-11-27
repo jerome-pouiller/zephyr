@@ -33,6 +33,13 @@ config WIFI_SILABS_NCP_DATA_TX_COUNT
 	int "Number of Ethernet frames in flight towards the co-processor"
 	default 4
 
+config WIFI_SILABS_NCP_DATA_TX_TIMEOUT_MS
+	int "Time to wait for a free frame slot before dropping a packet"
+	default 100
+	help
+	  The slots are released when the co-processor acknowledges the frames,
+	  at the pace of the bus. The sending thread waits that long for one.
+
 config WIFI_SILABS_NCP_MGMT_RX_COUNT
 	int "Number of management frame buffers handed to CPC"
 	default 4
