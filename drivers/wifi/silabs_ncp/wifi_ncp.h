@@ -63,9 +63,6 @@ struct wifi_ncp_nwp_hdr {
 
 BUILD_ASSERT(sizeof(struct wifi_ncp_nwp_hdr) == 16);
 
-/* Ethernet frame sent on the data queue, SLI_SEND_RAW_DATA of the host SDK */
-#define WIFI_NCP_NWP_CMD_RAW_DATA 1
-
 /* Flag of a sent frame: report its transmission with a TX status */
 #define WIFI_NCP_NWP_FLAG_CONFIRM BIT(2)
 
@@ -89,9 +86,10 @@ static inline uint8_t wifi_ncp_nwp_queue(const struct wifi_ncp_nwp_hdr *hdr)
 	return sys_le16_to_cpu(hdr->len_queue) >> 12;
 }
 
-/* Largest Ethernet frame with its descriptor, as a CPC payload */
-#define WIFI_NCP_DATA_MTU                                                                          \
-	ROUND_UP(sizeof(struct wifi_ncp_nwp_hdr) + NET_ETH_MAX_FRAME_SIZE, SL_CPC_BUF_MIN_ALIGNMENT)
+/* Largest Ethernet frame, as a CPC payload: the data endpoint carries them
+ * bare, without descriptor
+ */
+#define WIFI_NCP_DATA_MTU ROUND_UP(NET_ETH_MAX_FRAME_SIZE, SL_CPC_BUF_MIN_ALIGNMENT)
 /* Largest frame exchanged with the network processor */
 #define WIFI_NCP_MGMT_MTU 2048
 

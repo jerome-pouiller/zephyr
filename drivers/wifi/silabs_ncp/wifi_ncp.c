@@ -304,8 +304,8 @@ static enum ethernet_hw_caps wifi_ncp_get_capabilities(const struct device *dev,
 	return 0;
 }
 
-/* The Ethernet frame is copied behind its descriptor: CPC needs a
- * contiguous, aligned payload that stays valid until the send-done event,
+/* The Ethernet frame goes bare on the data endpoint. It is copied: CPC needs
+ * a contiguous, aligned payload that stays valid until the send-done event,
  * while the packet is released by the caller on return.
  */
 static int wifi_ncp_send(const struct device *dev, struct net_pkt *pkt)
@@ -313,7 +313,6 @@ static int wifi_ncp_send(const struct device *dev, struct net_pkt *pkt)
 	const struct wifi_ncp_config *cfg = dev->config;
 	struct wifi_ncp_data *data = dev->data;
 	struct wifi_ncp_data_tx_slot *slot;
-	struct wifi_ncp_nwp_hdr *desc;
 	size_t len = net_pkt_get_len(pkt);
 	int status;
 	int ret;
@@ -328,18 +327,14 @@ static int wifi_ncp_send(const struct device *dev, struct net_pkt *pkt)
 		return -ENOMEM;
 	}
 
-	desc = (struct wifi_ncp_nwp_hdr *)slot->data;
-	memset(desc, 0, sizeof(*desc));
-	wifi_ncp_nwp_set_len(desc, len, WIFI_NCP_NWP_QUEUE_DATA);
-	desc->command_id = WIFI_NCP_NWP_CMD_RAW_DATA;
 	net_pkt_cursor_init(pkt);
-	ret = net_pkt_read(pkt, slot->data + sizeof(struct wifi_ncp_nwp_hdr), len);
+	ret = net_pkt_read(pkt, slot->data, len);
 	if (ret < 0) {
 		k_mem_slab_free(cfg->data_tx_slab, slot);
 		return ret;
 	}
 
-	sl_cpc_buf_init(&slot->buf, slot->data, sizeof(struct wifi_ncp_nwp_hdr) + len);
+	sl_cpc_buf_init(&slot->buf, slot->data, len);
 	memset(&slot->frame, 0, sizeof(slot->frame));
 	status = sl_cpc_ep_send(&data->data_ep, &slot->buf, &slot->frame, NULL);
 	if (status) {
