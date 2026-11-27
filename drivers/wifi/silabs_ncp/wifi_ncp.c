@@ -183,21 +183,17 @@ void wifi_ncp_eth_recv(const struct device *dev, const uint8_t *frame, size_t le
 	}
 }
 
-/* Hand a received data frame to the network stack. The CPC buffer is given
- * back to the endpoint whatever the outcome.
+/* Hand a received data frame to the network stack. The data endpoint carries
+ * bare Ethernet frames, without the descriptor of the management endpoint.
+ * The CPC buffer is given back to the endpoint whatever the outcome.
  */
 static void wifi_ncp_data_recv(const struct device *dev, const sl_cpc_buf_t *buf)
 {
-	const struct wifi_ncp_nwp_hdr *hdr = buf->ptr;
-
-	if (buf->len < sizeof(*hdr) || hdr->command_id != WIFI_NCP_NWP_CMD_DATA ||
-	    buf->len < sizeof(*hdr) + hdr->ext_desc_size) {
-		LOG_WRN("%s: unexpected data frame (%u bytes), dropping", dev->name, buf->len);
+	if (buf->len < sizeof(struct net_eth_hdr)) {
+		LOG_WRN("%s: short data frame (%u bytes), dropping", dev->name, buf->len);
 		return;
 	}
-	/* The extended descriptor is not used */
-	wifi_ncp_eth_recv(dev, (const uint8_t *)(hdr + 1) + hdr->ext_desc_size,
-			  buf->len - sizeof(*hdr) - hdr->ext_desc_size);
+	wifi_ncp_eth_recv(dev, buf->ptr, buf->len);
 }
 
 static void wifi_ncp_data_ep_event(sl_cpc_ep_t *ep, sl_cpc_ep_event_type_t type,
@@ -335,6 +331,7 @@ static int wifi_ncp_send(const struct device *dev, struct net_pkt *pkt)
 	desc = (struct wifi_ncp_nwp_hdr *)slot->data;
 	memset(desc, 0, sizeof(*desc));
 	wifi_ncp_nwp_set_len(desc, len, WIFI_NCP_NWP_QUEUE_DATA);
+	desc->command_id = WIFI_NCP_NWP_CMD_RAW_DATA;
 	net_pkt_cursor_init(pkt);
 	ret = net_pkt_read(pkt, slot->data + sizeof(struct wifi_ncp_nwp_hdr), len);
 	if (ret < 0) {
