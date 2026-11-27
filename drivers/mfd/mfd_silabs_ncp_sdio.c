@@ -169,6 +169,8 @@ static void ncp_sdio_rx_parse(const struct device *dev, size_t xfer_len)
 		LOG_ERR("%s: payload exceeds the transfer length", dev->name);
 		goto drop;
 	}
+	/* The padding to the block size is not worth logging */
+	LOG_HEXDUMP_DBG(data->rx_buf, offset + payload_len, "rx");
 
 	/* Bind the endpoint and allocate the payload chain */
 	status = sli_cpc_alloc_rx_payload(&data->xport.common.cpc_bus, frame);
@@ -255,7 +257,6 @@ static bool ncp_sdio_rx(const struct device *dev)
 		ncp_sdio_dead(dev, "CMD53 read", ret);
 		return false;
 	}
-	LOG_HEXDUMP_DBG(data->rx_buf, xfer_len, "rx");
 
 	ncp_sdio_rx_parse(dev, xfer_len);
 
@@ -294,7 +295,8 @@ static bool ncp_sdio_tx(const struct device *dev)
 	xfer_len = ROUND_UP(offset, NCP_SDIO_BLOCK_SIZE);
 	memset(&data->tx_buf[offset], 0, xfer_len - offset);
 
-	LOG_HEXDUMP_DBG(data->tx_buf, xfer_len, "tx");
+	/* The padding to the block size is not worth logging */
+	LOG_HEXDUMP_DBG(data->tx_buf, offset, "tx");
 	ret = sdio_write_blocks_fifo(&data->func1, 0, data->tx_buf, xfer_len / NCP_SDIO_BLOCK_SIZE);
 	if (ret < 0) {
 		key = irq_lock();
