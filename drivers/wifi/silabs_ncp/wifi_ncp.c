@@ -383,6 +383,9 @@ static int wifi_ncp_init(const struct device *dev)
 {
 	const struct wifi_ncp_config *cfg = dev->config;
 	struct wifi_ncp_data *data = dev->data;
+	const struct k_work_queue_config wq_cfg = {
+		.name = dev->name,
+	};
 	int ret;
 
 	data->dev = dev;
@@ -401,7 +404,7 @@ static int wifi_ncp_init(const struct device *dev)
 
 	k_work_queue_init(&data->wq);
 	k_work_queue_start(&data->wq, data->wq_stack, K_KERNEL_STACK_SIZEOF(data->wq_stack),
-			   K_PRIO_PREEMPT(CONFIG_WIFI_SILABS_NCP_WQ_PRIORITY), NULL);
+			   K_PRIO_PREEMPT(CONFIG_WIFI_SILABS_NCP_WQ_PRIORITY), &wq_cfg);
 
 	ret = wifi_ncp_ep_open(dev, &data->mgmt_ep, WIFI_NCP_MGMT_EP_ID, WIFI_NCP_MGMT_MTU,
 			       &data->mgmt_rx[0].buf, sizeof(data->mgmt_rx[0]),
